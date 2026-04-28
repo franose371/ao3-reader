@@ -43,7 +43,15 @@
       <option value="light">浅色</option>
       <option value="sepia">护眼</option>
       <option value="dark">深色</option>
+      <option value="custom">自定义</option>
     </select>
+  </div>
+
+  <div class="setting-row" id="colorRow" style="display:none">
+    <label>背景色</label>
+    <input type="text" id="customColor" placeholder="#f5f0e8"
+      pattern="^#[0-9a-fA-F]{6}$"
+      style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
   </div>
 
   <button id="saveBtn" class="btn-primary">保存设置</button>

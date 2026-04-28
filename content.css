@@ -25,8 +25,6 @@
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
-  height: 100dvh;
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -38,7 +36,7 @@
 
 /* Theme variants */
 #ao3-reader-overlay.theme-light {
-  background: #fafafa;
+  background: #ffffff;
   color: #1a1a1a;
 }
 #ao3-reader-overlay.theme-sepia {
@@ -101,7 +99,6 @@
   top: 0;
   left: 0;
   height: 100%;
-  transition: transform 0.25s ease-out;
 }
 
 .ao3-reader-page {
@@ -172,7 +169,7 @@
   opacity: 0.3;
 }
 
-/* Menu overlay */
+/* Menu — bottom sheet */
 #ao3-reader-menu {
   position: fixed;
   top: 0;
@@ -181,25 +178,35 @@
   height: 100vh;
   height: 100dvh;
   z-index: 10000;
-  background: rgba(0,0,0,0.5);
   display: none;
-  align-items: center;
-  justify-content: center;
 }
 #ao3-reader-menu.show {
-  display: flex;
+  display: block;
+}
+#ao3-reader-menu .menu-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.3);
 }
 #ao3-reader-menu .menu-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
   background: #fff;
   color: #333;
-  border-radius: 12px;
-  padding: 24px;
-  min-width: 260px;
-  max-width: 90vw;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  border-radius: 12px 12px 0 0;
+  padding: 20px 24px 28px;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.2);
+  max-height: 55vh;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 #ao3-reader-menu .menu-panel h3 {
-  margin: 0 0 16px 0;
+  margin: 0 0 14px 0;
   font-size: 16px;
   text-align: center;
 }
@@ -207,7 +214,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 12px 0;
+  margin: 10px 0;
   font-size: 14px;
 }
 #ao3-reader-menu .menu-row label {
@@ -233,7 +240,7 @@
 #ao3-reader-menu .btn-primary {
   display: block;
   width: 100%;
-  margin-top: 16px;
+  margin-top: 14px;
   padding: 10px;
   background: #900000 !important;
   color: #fff !important;

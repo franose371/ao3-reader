@@ -6,8 +6,9 @@
   const DEFAULTS = {
     swapLR: false,
     fontSize: 18,
-    theme: 'sepia',
+    theme: 'light',
     lineHeight: 1.8,
+    customColor: '',
   };
 
   // ── State ───────────────────────────────────────────────────────────
@@ -18,6 +19,7 @@
   let chapterTitle = '';
   let workTitle = '';
   let isActive = false;
+  let isLoadingChapter = false;
   let readerEventsBound = false;
   let touchStartX = 0;
   let touchStartY = 0;
@@ -45,8 +47,17 @@
   function parseAO3Page() {
     const result = { hasContent: false, contentEl: null };
 
-    // Get the userstuff content
-    const userstuff = document.querySelector('#chapters .userstuff');
+    // Get the userstuff content — exclude blockquote.userstuff used in
+    // chapter summaries/notes to avoid picking up summary instead of body
+    const allUserstuff = document.querySelectorAll('#chapters .userstuff');
+    let userstuff = null;
+    for (const el of allUserstuff) {
+      if (!el.closest('.summary') && !el.closest('.notes') && el.tagName !== 'BLOCKQUOTE') {
+        userstuff = el;
+        break;
+      }
+    }
+    if (!userstuff && allUserstuff.length > 0) userstuff = allUserstuff[0];
     if (!userstuff) return result;
 
     // Get work title
@@ -173,7 +184,10 @@
   }
 
   function buildMenuHTML() {
+    const customDisplay = settings.theme === 'custom' ? '' : 'display:none;';
+    const colorVal = settings.customColor || getThemeDefaultColor();
     return `
+      <div class="menu-backdrop"></div>
       <div class="menu-panel">
         <h3>阅读设置</h3>
         <div class="menu-row">
@@ -197,7 +211,14 @@
             <option value="light" ${settings.theme === 'light' ? 'selected' : ''}>浅色</option>
             <option value="sepia" ${settings.theme === 'sepia' ? 'selected' : ''}>护眼</option>
             <option value="dark" ${settings.theme === 'dark' ? 'selected' : ''}>深色</option>
+            <option value="custom" ${settings.theme === 'custom' ? 'selected' : ''}>自定义</option>
           </select>
+        </div>
+        <div class="menu-row" id="ao3-menu-color-row" style="${customDisplay}">
+          <label>背景色</label>
+          <input type="text" id="ao3-menu-custom-color" value="${colorVal}"
+            placeholder="#f5f0e8" pattern="^#[0-9a-fA-F]{6}$"
+            style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
         </div>
         <button id="ao3-menu-exit" class="btn-primary">退出阅读模式</button>
       </div>
@@ -211,30 +232,36 @@
     const parsed = parseAO3Page();
     if (!parsed.hasContent) return;
 
-    // Rebuild reader UI with fresh content
+    // Rebuild footer/menu with current state
     if (overlay) {
       footer.innerHTML = buildFooterHTML();
       menu.innerHTML = buildMenuHTML();
     }
 
-    // Paginate content into pages
-    const pageArrays = paginateContent(parsed.contentEl);
-    if (pageArrays.length === 0) return;
-
-    // Render pages
-    renderPages(pageArrays);
-
-    // Apply theme
-    overlay.className = 'theme-' + settings.theme;
-
-    // Show overlay
+    // Use window.innerHeight to avoid browser address bar overlap (Edge)
+    overlay.style.height = window.innerHeight + 'px';
+    overlay.style.visibility = 'hidden';
     overlay.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+
+    // Render paginated content with accurate viewport height
+    const numPages = renderPages(parsed.contentEl);
+    if (numPages === 0) {
+      overlay.style.display = 'none';
+      overlay.style.visibility = '';
+      document.body.style.overflow = '';
+      return;
+    }
+
+    applyTheme();
+
+    // Make visible
+    overlay.style.visibility = '';
     document.getElementById('ao3-reader-entry-btn').style.display = 'none';
 
     isActive = true;
     currentPage = 0;
-    totalPages = pageArrays.length;
+    totalPages = numPages;
     updatePagePosition();
     updatePageIndicator();
 
@@ -254,109 +281,80 @@
   }
 
   // ── Pagination ──────────────────────────────────────────────────────
-  function getAvailableHeight() {
-    const headerH = header ? header.offsetHeight : 40;
-    const footerH = footer ? footer.offsetHeight : 40;
-    return window.innerHeight - headerH - footerH - 24;
+  function prepareContentClone(contentEl) {
+    const clone = contentEl.cloneNode(true);
+    clone.querySelectorAll('.landmark').forEach((el) => el.remove());
+    const toast = clone.querySelector('#toast');
+    if (toast) toast.remove();
+    return clone;
   }
 
-  function paginateContent(contentEl) {
-    const pageWidth = window.innerWidth - 40; // 20px padding each side
-    const pageHeight = getAvailableHeight();
+  function renderPages(contentEl) {
+    const pageWidth = window.innerWidth;
+    // viewport is between header and footer in flex layout
+    const pageHeight = viewport.clientHeight || Math.max(200, window.innerHeight - 100);
+    const contentPadding = 20;
 
-    // Create hidden measurement container
+    // Measure total content height at the target width
     const measure = document.createElement('div');
     measure.style.cssText = `
       position: fixed;
       left: -9999px;
       top: 0;
-      width: ${pageWidth}px;
+      width: ${pageWidth - contentPadding * 2}px;
       visibility: hidden;
       font-size: ${settings.fontSize}px;
       line-height: ${settings.lineHeight};
       font-family: 'Noto Serif SC', 'Source Han Serif SC', Georgia, 'Times New Roman', serif;
     `;
+    const measureContent = prepareContentClone(contentEl);
+    measure.appendChild(measureContent);
     document.body.appendChild(measure);
-
-    const children = [...contentEl.children];
-    const pages = [];
-    let currentPageItems = [];
-    let currentHeight = 0;
-
-    for (const child of children) {
-      // Skip empty/non-content elements
-      const tag = child.tagName ? child.tagName.toLowerCase() : '';
-      if (tag === 'h3' && child.className && child.className.includes('landmark')) continue;
-      if (child.classList && child.classList.contains('landmark')) continue;
-      if (child.id === 'toast') continue;
-
-      const clone = child.cloneNode(true);
-      measure.appendChild(clone);
-      const h = clone.getBoundingClientRect().height;
-      measure.removeChild(clone);
-
-      // If this element alone is taller than a page, include it anyway (page will scroll)
-      if (currentHeight + h > pageHeight && currentPageItems.length > 0) {
-        pages.push(currentPageItems);
-        currentPageItems = [];
-        currentHeight = 0;
-      }
-
-      currentPageItems.push(child);
-      currentHeight += h;
-    }
-
-    if (currentPageItems.length > 0) {
-      pages.push(currentPageItems);
-    }
-
+    const totalHeight = measureContent.getBoundingClientRect().height;
     document.body.removeChild(measure);
-    return pages;
-  }
 
-  function renderPages(pageArrays) {
+    // Each page shows exactly pageHeight px of content
+    const numPages = Math.max(1, Math.ceil(totalHeight / pageHeight));
+
+    // Build page elements
     pagesEl.innerHTML = '';
-    pagesEl.style.display = 'flex';
-    pagesEl.style.flexWrap = 'nowrap';
-    pagesEl.style.position = 'absolute';
-    pagesEl.style.top = '0';
-    pagesEl.style.left = '0';
-    pagesEl.style.height = '100%';
-    pagesEl.style.transition = 'transform 0.25s ease-out';
-    pagesEl.style.columnWidth = '';
-    pagesEl.style.fontSize = settings.fontSize + 'px';
-    pagesEl.style.lineHeight = settings.lineHeight;
+    pagesEl.style.cssText = `
+      display: flex;
+      flex-wrap: nowrap;
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      font-size: ${settings.fontSize}px;
+      line-height: ${settings.lineHeight};
+    `;
 
-    const pageWidth = window.innerWidth;
-    const pageHeight = viewport.clientHeight;
-
-    for (const items of pageArrays) {
+    for (let i = 0; i < numPages; i++) {
       const pageDiv = document.createElement('div');
       pageDiv.className = 'ao3-reader-page';
       pageDiv.style.cssText = `
         width: ${pageWidth}px;
         height: ${pageHeight}px;
-        overflow-y: auto;
-        padding: 12px 20px;
-        box-sizing: border-box;
+        overflow: hidden;
         flex-shrink: 0;
       `;
 
-      for (const el of items) {
-        pageDiv.appendChild(el.cloneNode(true));
-      }
+      const inner = document.createElement('div');
+      inner.style.cssText = `
+        width: ${pageWidth}px;
+        padding: 12px ${contentPadding}px;
+        box-sizing: border-box;
+        margin-top: -${i * pageHeight}px;
+        font-size: ${settings.fontSize}px;
+        line-height: ${settings.lineHeight};
+      `;
+      inner.appendChild(prepareContentClone(contentEl));
 
+      pageDiv.appendChild(inner);
       pagesEl.appendChild(pageDiv);
     }
-  }
 
-  function updatePagination() {
-    totalPages = pagesEl.children.length;
-    if (currentPage >= totalPages) {
-      currentPage = Math.max(0, totalPages - 1);
-    }
-    updatePagePosition();
-    updatePageIndicator();
+    return numPages;
   }
 
   function updatePagePosition() {
@@ -383,9 +381,7 @@
       updatePagePosition();
       updatePageIndicator();
     } else if (chapterLinks.prev) {
-      // At first page, go to previous chapter
-      exitReadingMode();
-      window.location.href = chapterLinks.prev;
+      loadChapter(chapterLinks.prev);
     }
   }
 
@@ -395,21 +391,17 @@
       updatePagePosition();
       updatePageIndicator();
     } else if (chapterLinks.next) {
-      // At last page, go to next chapter
-      exitReadingMode();
-      window.location.href = chapterLinks.next;
+      loadChapter(chapterLinks.next);
     }
   }
 
   function repaginate() {
-    // Re-extract content and re-paginate (for font size changes)
     const parsed = parseAO3Page();
     if (!parsed.hasContent) return;
 
     const savedPage = currentPage;
-    const pageArrays = paginateContent(parsed.contentEl);
-    renderPages(pageArrays);
-    totalPages = pageArrays.length;
+    const numPages = renderPages(parsed.contentEl);
+    totalPages = numPages;
     currentPage = Math.min(savedPage, totalPages - 1);
     updatePagePosition();
     updatePageIndicator();
@@ -431,16 +423,16 @@
     }
   }
 
-  // ── Font settings ───────────────────────────────────────────────────
-  function applyFontSettings() {
-    // Update all page divs with current font settings
-    const pageDivs = pagesEl.querySelectorAll('.ao3-reader-page');
-    pageDivs.forEach((div) => {
-      div.style.fontSize = settings.fontSize + 'px';
-      div.style.lineHeight = settings.lineHeight;
-    });
-    pagesEl.style.fontSize = settings.fontSize + 'px';
-    pagesEl.style.lineHeight = settings.lineHeight;
+  // ── Theme ────────────────────────────────────────────────────────────
+  function applyTheme() {
+    overlay.classList.remove('theme-light', 'theme-sepia', 'theme-dark');
+    overlay.classList.add('theme-' + settings.theme);
+
+    if (settings.customColor && /^#[0-9a-fA-F]{6}$/.test(settings.customColor)) {
+      overlay.style.backgroundColor = settings.customColor;
+    } else {
+      overlay.style.backgroundColor = '';
+    }
   }
 
   // ── Menu ────────────────────────────────────────────────────────────
@@ -452,10 +444,27 @@
       const swapSel = document.getElementById('ao3-menu-swap');
       const fontVal = document.getElementById('ao3-menu-font-val');
       const themeSel = document.getElementById('ao3-menu-theme');
+      const colorInput = document.getElementById('ao3-menu-custom-color');
+      const colorRow = document.getElementById('ao3-menu-color-row');
       if (swapSel) swapSel.value = settings.swapLR ? '1' : '0';
       if (fontVal) fontVal.textContent = settings.fontSize;
       if (themeSel) themeSel.value = settings.theme;
+      if (colorInput) {
+        colorInput.value = settings.customColor || getThemeDefaultColor();
+      }
+      if (colorRow) {
+        colorRow.style.display = settings.theme === 'custom' ? '' : 'none';
+      }
       menu.classList.add('show');
+    }
+  }
+
+  function getThemeDefaultColor() {
+    switch (settings.theme) {
+      case 'light': return '#ffffff';
+      case 'sepia': return '#f5f0e8';
+      case 'dark': return '#1a1a1a';
+      default: return '#f5f0e8';
     }
   }
 
@@ -477,11 +486,36 @@
 
     // Theme
     const themeSel = document.getElementById('ao3-menu-theme');
+    const colorInput = document.getElementById('ao3-menu-custom-color');
+    const colorRow = document.getElementById('ao3-menu-color-row');
     if (themeSel) {
       themeSel.addEventListener('change', function () {
         settings.theme = this.value;
-        overlay.className = 'theme-' + settings.theme;
+        if (this.value === 'custom') {
+          if (colorRow) colorRow.style.display = '';
+          if (colorInput) {
+            settings.customColor = colorInput.value;
+          }
+        } else {
+          if (colorRow) colorRow.style.display = 'none';
+          settings.customColor = '';
+        }
+        applyTheme();
         saveSettings();
+      });
+    }
+
+    // Custom color input
+    if (colorInput) {
+      colorInput.addEventListener('input', function () {
+        const val = this.value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+          settings.customColor = val;
+          settings.theme = 'custom';
+          if (themeSel) themeSel.value = 'custom';
+          applyTheme();
+          saveSettings();
+        }
       });
     }
 
@@ -523,8 +557,7 @@
         e.stopPropagation();
         const href = prevBtn.getAttribute('data-href');
         if (href && href !== '#') {
-          exitReadingMode();
-          window.location.href = href;
+          loadChapter(href);
         }
       });
     }
@@ -534,8 +567,7 @@
         e.stopPropagation();
         const href = nextBtn.getAttribute('data-href');
         if (href && href !== '#') {
-          exitReadingMode();
-          window.location.href = href;
+          loadChapter(href);
         }
       });
     }
@@ -545,27 +577,128 @@
         e.stopPropagation();
         const idx = parseInt(selectEl.value);
         const opt = chapterLinks.select.options[idx];
-        if (opt) {
-          const url = new URL(window.location.href);
-          url.searchParams.set('view_single', '1'); // avoid ?view_full_work
-          // AO3 chapter select uses the chapter ID from the option value
+        if (opt && opt.value) {
           const workId = extractWorkId();
           if (workId) {
-            exitReadingMode();
-            window.location.href =
+            const url =
               'https://archiveofourown.org/works/' +
               workId +
               '/chapters/' +
               opt.value;
+            loadChapter(url);
           }
         }
       });
     }
   }
 
-  function extractWorkId() {
-    const m = window.location.pathname.match(/\/works\/(\d+)/);
+  function extractWorkId(url) {
+    const m = (url || window.location.pathname).match(/\/works\/(\d+)/);
     return m ? m[1] : null;
+  }
+
+  async function loadChapter(url, opts = {}) {
+    if (isLoadingChapter) return;
+    const { updateHistory = true } = opts;
+    isLoadingChapter = true;
+
+    // Fetch the chapter page
+    let html;
+    try {
+      const resp = await fetch(url, { credentials: 'include' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      html = await resp.text();
+    } catch (err) {
+      isLoadingChapter = false;
+      exitReadingMode();
+      window.location.href = url;
+      return;
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Extract body content — same filtering as parseAO3Page
+    const allUserstuff = doc.querySelectorAll('#chapters .userstuff');
+    let userstuff = null;
+    for (const el of allUserstuff) {
+      if (!el.closest('.summary') && !el.closest('.notes') && el.tagName !== 'BLOCKQUOTE') {
+        userstuff = el;
+        break;
+      }
+    }
+    if (!userstuff && allUserstuff.length > 0) userstuff = allUserstuff[0];
+    if (!userstuff) {
+      isLoadingChapter = false;
+      exitReadingMode();
+      window.location.href = url;
+      return;
+    }
+
+    // Extract metadata
+    const titleEl = doc.querySelector('h2.title.heading');
+    workTitle = titleEl ? titleEl.textContent.trim() : workTitle;
+
+    const chapterTitleEl =
+      doc.querySelector('#chapters h3.title') ||
+      doc.querySelector('.chapter .title');
+    chapterTitle = chapterTitleEl
+      ? chapterTitleEl.textContent.trim()
+      : workTitle;
+
+    const authorEl = doc.querySelector('h3.byline a[rel="author"]');
+    if (authorEl) {
+      chapterTitle = workTitle + ' - ' + authorEl.textContent.trim();
+    }
+
+    // Chapter navigation
+    const prevLink = doc.querySelector('li.chapter.previous a');
+    const nextLink = doc.querySelector('li.chapter.next a');
+    chapterLinks.prev = prevLink ? prevLink.href : null;
+    chapterLinks.next = nextLink ? nextLink.href : null;
+
+    const chapterSelect = doc.querySelector('#selected_id');
+    if (chapterSelect && chapterSelect.tagName === 'SELECT') {
+      chapterLinks.select = {
+        options: [...chapterSelect.options].map((opt) => ({
+          value: opt.value,
+          text: opt.textContent.trim(),
+          selected: opt.selected,
+        })),
+        currentIndex: chapterSelect.selectedIndex,
+        onChange: chapterSelect.getAttribute('onchange'),
+      };
+    } else {
+      chapterLinks.select = null;
+    }
+
+    // Update UI
+    const titleSpan = header.querySelector('.chapter-title');
+    if (titleSpan) titleSpan.textContent = chapterTitle;
+
+    // Re-paginate with new content (userstuff is from the parsed doc, but we need
+    // to measure it in the live DOM — clone it into a temporary container)
+    const tempContainer = document.createElement('div');
+    while (userstuff.firstChild) {
+      tempContainer.appendChild(userstuff.firstChild);
+    }
+
+    const numPages = renderPages(tempContainer);
+    totalPages = numPages;
+    currentPage = 0;
+    updatePagePosition();
+    updatePageIndicator();
+
+    // Update footer navigation
+    footer.innerHTML = buildFooterHTML();
+    bindFooterEvents();
+
+    // Update URL (skip for popstate — browser already handled it)
+    if (updateHistory) {
+      history.pushState({ ao3Reader: true }, '', url);
+    }
+
+    isLoadingChapter = false;
   }
 
   // ── Event handling ──────────────────────────────────────────────────
@@ -626,11 +759,17 @@
 
   function onResize() {
     if (!isActive) return;
+    overlay.style.height = window.innerHeight + 'px';
     repaginate();
   }
 
+  function onPopState() {
+    if (!isActive) return;
+    loadChapter(window.location.href, { updateHistory: false });
+  }
+
   function onMenuBackdropClick(e) {
-    if (e.target === menu) {
+    if (e.target.classList.contains('menu-backdrop')) {
       toggleMenu();
     }
   }
@@ -645,6 +784,7 @@
     viewport.addEventListener('touchend', onViewportTouchEnd);
     document.addEventListener('keydown', onKeyDown);
     window.addEventListener('resize', onResize);
+    window.addEventListener('popstate', onPopState);
     menu.addEventListener('click', onMenuBackdropClick);
 
     // Header exit button
@@ -667,6 +807,7 @@
     viewport.removeEventListener('touchend', onViewportTouchEnd);
     document.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('popstate', onPopState);
     menu.removeEventListener('click', onMenuBackdropClick);
 
     const exitBtn = document.getElementById('ao3-reader-btn-exit');

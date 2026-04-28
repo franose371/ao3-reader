@@ -5,7 +5,7 @@ chrome.runtime.onInstalled.addListener(() => {
         ao3ReaderSettings: {
           swapLR: false,
           fontSize: 18,
-          theme: 'sepia',
+          theme: 'light',
           lineHeight: 1.8
         }
       });
