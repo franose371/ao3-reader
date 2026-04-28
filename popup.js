@@ -1,6 +1,8 @@
 const defaults = {
   swapLR: false, fontSize: 18, theme: 'light',
-  lineHeight: 1.8, customColor: ''
+  lineHeight: 1.8, customColor: '',
+  marginTop: 12, marginBottom: 12,
+  marginLeft: 20, marginRight: 20
 };
 
 function $(id) { return document.getElementById(id); }
@@ -14,6 +16,10 @@ function loadSettings() {
     $('theme').value = s.theme || 'sepia';
     $('customColor').value = s.customColor || '';
     $('colorRow').style.display = s.theme === 'custom' ? '' : 'none';
+    $('marginTop').value = String(s.marginTop || 12);
+    $('marginBottom').value = String(s.marginBottom || 12);
+    $('marginLeft').value = String(s.marginLeft || 20);
+    $('marginRight').value = String(s.marginRight || 20);
   });
 }
 
@@ -36,7 +42,11 @@ function saveSettings() {
       fontSize: parseInt($('fontSizeVal').textContent),
       lineHeight: parseFloat($('lineHeight').value),
       theme: $('theme').value,
-      customColor: $('theme').value === 'custom' ? $('customColor').value.trim() : ''
+      customColor: $('theme').value === 'custom' ? $('customColor').value.trim() : '',
+      marginTop: parseInt($('marginTop').value),
+      marginBottom: parseInt($('marginBottom').value),
+      marginLeft: parseInt($('marginLeft').value),
+      marginRight: parseInt($('marginRight').value)
     }
   }, () => {
     const btn = $('saveBtn');

@@ -9,6 +9,10 @@
     theme: 'light',
     lineHeight: 1.8,
     customColor: '',
+    marginTop: 12,
+    marginBottom: 12,
+    marginLeft: 20,
+    marginRight: 20,
   };
 
   // ── State ───────────────────────────────────────────────────────────
@@ -23,6 +27,8 @@
   let readerEventsBound = false;
   let touchStartX = 0;
   let touchStartY = 0;
+  let lastPageActionTime = 0;
+  let cachedContentEl = null;   // for repaginate after AJAX chapter load
 
   // DOM refs (populated when reader is created)
   let overlay, header, viewport, pagesEl, footer, menu, pageIndicator;
@@ -220,6 +226,42 @@
             placeholder="#f5f0e8" pattern="^#[0-9a-fA-F]{6}$"
             style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
         </div>
+        <div class="menu-row">
+          <label>行高</label>
+          <select id="ao3-menu-lh">
+            <option value="1.5" ${settings.lineHeight === 1.5 ? 'selected' : ''}>1.5</option>
+            <option value="1.8" ${settings.lineHeight === 1.8 ? 'selected' : ''}>1.8</option>
+            <option value="2.0" ${settings.lineHeight === 2.0 ? 'selected' : ''}>2.0</option>
+            <option value="2.2" ${settings.lineHeight === 2.2 ? 'selected' : ''}>2.2</option>
+          </select>
+        </div>
+        <div style="font-size:14px;font-weight:bold;margin:10px 0 4px;">边距设置 (px)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div class="menu-row" style="margin:4px 0;">
+            <label>上</label>
+            <select id="ao3-menu-mt" style="width:60px;">
+              ${[0,4,8,12,16,20,24,28,32,40].map(v => `<option value="${v}" ${(settings.marginTop || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div class="menu-row" style="margin:4px 0;">
+            <label>下</label>
+            <select id="ao3-menu-mb" style="width:60px;">
+              ${[0,4,8,12,16,20,24,28,32,40].map(v => `<option value="${v}" ${(settings.marginBottom || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div class="menu-row" style="margin:4px 0;">
+            <label>左</label>
+            <select id="ao3-menu-ml" style="width:60px;">
+              ${[4,8,12,16,20,24,28,32,40].map(v => `<option value="${v}" ${(settings.marginLeft || 20) === v ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div class="menu-row" style="margin:4px 0;">
+            <label>右</label>
+            <select id="ao3-menu-mr" style="width:60px;">
+              ${[4,8,12,16,20,24,28,32,40].map(v => `<option value="${v}" ${(settings.marginRight || 20) === v ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+          </div>
+        </div>
         <button id="ao3-menu-exit" class="btn-primary">退出阅读模式</button>
       </div>
     `;
@@ -293,15 +335,21 @@
     const pageWidth = window.innerWidth;
     // viewport is between header and footer in flex layout
     const pageHeight = viewport.clientHeight || Math.max(200, window.innerHeight - 100);
-    const contentPadding = 20;
+    const padTop = settings.marginTop || 12;
+    const padBottom = settings.marginBottom || 12;
+    const padLeft = settings.marginLeft || 20;
+    const padRight = settings.marginRight || 20;
 
-    // Measure total content height at the target width
+    // Measure total content height — include vertical padding so measurement
+    // matches the actual inner div layout (padding pushes content down)
     const measure = document.createElement('div');
     measure.style.cssText = `
       position: fixed;
       left: -9999px;
       top: 0;
-      width: ${pageWidth - contentPadding * 2}px;
+      width: ${pageWidth - padLeft - padRight}px;
+      padding: ${padTop}px 0 ${padBottom}px 0;
+      box-sizing: border-box;
       visibility: hidden;
       font-size: ${settings.fontSize}px;
       line-height: ${settings.lineHeight};
@@ -313,8 +361,12 @@
     const totalHeight = measureContent.getBoundingClientRect().height;
     document.body.removeChild(measure);
 
-    // Each page shows exactly pageHeight px of content
-    const numPages = Math.max(1, Math.ceil(totalHeight / pageHeight));
+    // Inner div total height = padTop + content + padBottom
+    const innerTotalHeight = padTop + totalHeight + padBottom;
+    const numPages = Math.max(1, Math.ceil(innerTotalHeight / pageHeight));
+
+    // Cache for repaginate (so we don't re-parse the original DOM)
+    cachedContentEl = contentEl;
 
     // Build page elements
     pagesEl.innerHTML = '';
@@ -342,7 +394,7 @@
       const inner = document.createElement('div');
       inner.style.cssText = `
         width: ${pageWidth}px;
-        padding: 12px ${contentPadding}px;
+        padding: ${padTop}px ${padRight}px ${padBottom}px ${padLeft}px;
         box-sizing: border-box;
         margin-top: -${i * pageHeight}px;
         font-size: ${settings.fontSize}px;
@@ -380,7 +432,9 @@
       currentPage--;
       updatePagePosition();
       updatePageIndicator();
+      lastPageActionTime = Date.now();
     } else if (chapterLinks.prev) {
+      lastPageActionTime = Date.now();
       loadChapter(chapterLinks.prev);
     }
   }
@@ -390,17 +444,22 @@
       currentPage++;
       updatePagePosition();
       updatePageIndicator();
+      lastPageActionTime = Date.now();
     } else if (chapterLinks.next) {
+      lastPageActionTime = Date.now();
       loadChapter(chapterLinks.next);
     }
   }
 
   function repaginate() {
-    const parsed = parseAO3Page();
-    if (!parsed.hasContent) return;
+    if (!cachedContentEl) {
+      const parsed = parseAO3Page();
+      if (!parsed.hasContent) return;
+      cachedContentEl = parsed.contentEl;
+    }
 
     const savedPage = currentPage;
-    const numPages = renderPages(parsed.contentEl);
+    const numPages = renderPages(cachedContentEl);
     totalPages = numPages;
     currentPage = Math.min(savedPage, totalPages - 1);
     updatePagePosition();
@@ -412,14 +471,12 @@
     const third = vw / 3;
 
     if (clientX < third) {
-      // Left zone
       settings.swapLR ? goToNextPage() : goToPrevPage();
     } else if (clientX > third * 2) {
-      // Right zone
       settings.swapLR ? goToPrevPage() : goToNextPage();
     } else {
-      // Middle zone - toggle menu
       toggleMenu();
+      lastPageActionTime = Date.now();
     }
   }
 
@@ -455,6 +512,16 @@
       if (colorRow) {
         colorRow.style.display = settings.theme === 'custom' ? '' : 'none';
       }
+      const lhSel = document.getElementById('ao3-menu-lh');
+      if (lhSel) lhSel.value = String(settings.lineHeight);
+      const mtSel = document.getElementById('ao3-menu-mt');
+      if (mtSel) mtSel.value = String(settings.marginTop || 12);
+      const mbSel = document.getElementById('ao3-menu-mb');
+      if (mbSel) mbSel.value = String(settings.marginBottom || 12);
+      const mlSel = document.getElementById('ao3-menu-ml');
+      if (mlSel) mlSel.value = String(settings.marginLeft || 20);
+      const mrSel = document.getElementById('ao3-menu-mr');
+      if (mrSel) mrSel.value = String(settings.marginRight || 20);
       menu.classList.add('show');
     }
   }
@@ -544,6 +611,28 @@
         }
       });
     }
+
+    // Line height
+    const lhSel = document.getElementById('ao3-menu-lh');
+    if (lhSel) {
+      lhSel.addEventListener('change', function () {
+        settings.lineHeight = parseFloat(this.value);
+        saveSettings();
+        repaginate();
+      });
+    }
+
+    // Margins
+    ['mt','mb','ml','mr'].forEach((key) => {
+      const sel = document.getElementById('ao3-menu-' + key);
+      if (!sel) return;
+      sel.addEventListener('change', function () {
+        const map = { mt: 'marginTop', mb: 'marginBottom', ml: 'marginLeft', mr: 'marginRight' };
+        settings[map[key]] = parseInt(this.value);
+        saveSettings();
+        repaginate();
+      });
+    });
   }
 
   // ── Chapter navigation ──────────────────────────────────────────────
@@ -580,12 +669,7 @@
         if (opt && opt.value) {
           const workId = extractWorkId();
           if (workId) {
-            const url =
-              'https://archiveofourown.org/works/' +
-              workId +
-              '/chapters/' +
-              opt.value;
-            loadChapter(url);
+            loadChapter(buildChapterUrl(opt.value, workId));
           }
         }
       });
@@ -595,6 +679,18 @@
   function extractWorkId(url) {
     const m = (url || window.location.pathname).match(/\/works\/(\d+)/);
     return m ? m[1] : null;
+  }
+
+  // Build a chapter URL from an option value which may be:
+  //   a full URL  → use as-is
+  //   a path      → prepend origin
+  //   a bare ID   → construct /works/{workId}/chapters/{id}
+  function buildChapterUrl(optValue, workId) {
+    if (/^https?:\/\//i.test(optValue)) return optValue;
+    if (/^\/works\/\d+\/chapters\/\d+/.test(optValue)) {
+      return window.location.origin + optValue;
+    }
+    return 'https://archiveofourown.org/works/' + workId + '/chapters/' + optValue;
   }
 
   async function loadChapter(url, opts = {}) {
@@ -708,6 +804,9 @@
 
   function onViewportClick(e) {
     if (isInteractiveTarget(e.target)) return;
+    // Suppress click if a touch event already triggered a page action
+    // (mobile browsers fire both touchend and click for the same tap)
+    if (Date.now() - lastPageActionTime < 500) return;
     e.preventDefault();
     handleTap(e.clientX);
   }

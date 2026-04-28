@@ -6,7 +6,11 @@ chrome.runtime.onInstalled.addListener(() => {
           swapLR: false,
           fontSize: 18,
           theme: 'light',
-          lineHeight: 1.8
+          lineHeight: 1.8,
+          marginTop: 12,
+          marginBottom: 12,
+          marginLeft: 20,
+          marginRight: 20
         }
       });
     }
