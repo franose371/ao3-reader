@@ -1,0 +1,90 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  min-width: 280px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  background: #fafafa;
+  color: #333;
+}
+
+.popup-container {
+  padding: 16px;
+}
+
+h1 {
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 16px;
+  color: #900000;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0;
+  gap: 12px;
+}
+
+.setting-row label {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.setting-row select {
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+
+.btn-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-group button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-group span {
+  font-size: 14px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.btn-primary {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  background: #900000;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-primary:active {
+  background: #700000;
+}
+
+.hint {
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+  margin-top: 10px;
+}

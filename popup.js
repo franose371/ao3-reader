@@ -1,0 +1,48 @@
+const defaults = { swapLR: false, fontSize: 18, theme: 'sepia', lineHeight: 1.8 };
+
+function $(id) { return document.getElementById(id); }
+
+function loadSettings() {
+  chrome.storage.sync.get('ao3ReaderSettings', (data) => {
+    const s = data.ao3ReaderSettings || defaults;
+    $('swapLR').value = s.swapLR ? '1' : '0';
+    $('fontSizeVal').textContent = s.fontSize;
+    $('lineHeight').value = String(s.lineHeight);
+    $('theme').value = s.theme;
+  });
+}
+
+function saveSettings() {
+  chrome.storage.sync.set({
+    ao3ReaderSettings: {
+      swapLR: $('swapLR').value === '1',
+      fontSize: parseInt($('fontSizeVal').textContent),
+      lineHeight: parseFloat($('lineHeight').value),
+      theme: $('theme').value
+    }
+  }, () => {
+    const btn = $('saveBtn');
+    btn.textContent = '已保存 ✓';
+    setTimeout(() => { btn.textContent = '保存设置'; }, 1500);
+  });
+}
+
+$('fontSizeUp').addEventListener('click', () => {
+  let val = parseInt($('fontSizeVal').textContent);
+  if (val < 28) {
+    val += 1;
+    $('fontSizeVal').textContent = val;
+  }
+});
+
+$('fontSizeDown').addEventListener('click', () => {
+  let val = parseInt($('fontSizeVal').textContent);
+  if (val > 12) {
+    val -= 1;
+    $('fontSizeVal').textContent = val;
+  }
+});
+
+$('saveBtn').addEventListener('click', saveSettings);
+
+document.addEventListener('DOMContentLoaded', loadSettings);

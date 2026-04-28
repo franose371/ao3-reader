@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AO3 Reader 设置</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="popup-container">
+  <h1>AO3 Reader</h1>
+
+  <div class="setting-row">
+    <label>点击翻页方向</label>
+    <select id="swapLR">
+      <option value="0">左=上一页, 右=下一页</option>
+      <option value="1">左=下一页, 右=上一页</option>
+    </select>
+  </div>
+
+  <div class="setting-row">
+    <label>字号</label>
+    <div class="btn-group">
+      <button id="fontSizeDown">−</button>
+      <span id="fontSizeVal">18</span>
+      <button id="fontSizeUp">+</button>
+    </div>
+  </div>
+
+  <div class="setting-row">
+    <label>行高</label>
+    <select id="lineHeight">
+      <option value="1.5">1.5</option>
+      <option value="1.8">1.8</option>
+      <option value="2.0">2.0</option>
+      <option value="2.2">2.2</option>
+    </select>
+  </div>
+
+  <div class="setting-row">
+    <label>主题</label>
+    <select id="theme">
+      <option value="light">浅色</option>
+      <option value="sepia">护眼</option>
+      <option value="dark">深色</option>
+    </select>
+  </div>
+
+  <button id="saveBtn" class="btn-primary">保存设置</button>
+  <p class="hint">打开AO3作品页面，点击浮动按钮进入阅读模式</p>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
