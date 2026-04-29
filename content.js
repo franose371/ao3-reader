@@ -31,7 +31,7 @@
   let cachedContentEl = null;   // for repaginate after AJAX chapter load
 
   // DOM refs (populated when reader is created)
-  let overlay, header, viewport, pagesEl, footer, menu, pageIndicator;
+  let overlay, header, viewport, pagesEl, footer, menu, pageIndicator, loadingEl;
 
   // ── Settings ────────────────────────────────────────────────────────
   function loadSettings() {
@@ -152,9 +152,23 @@
     menu.id = 'ao3-reader-menu';
     menu.innerHTML = buildMenuHTML();
 
+    // Chapter loading overlay
+    loadingEl = document.createElement('div');
+    loadingEl.id = 'ao3-reader-loading';
+    loadingEl.setAttribute('role', 'status');
+    loadingEl.setAttribute('aria-live', 'polite');
+    loadingEl.setAttribute('aria-hidden', 'true');
+    loadingEl.innerHTML = `
+      <div class="loading-card">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">章节加载中...</div>
+      </div>
+    `;
+
     overlay.appendChild(header);
     overlay.appendChild(viewport);
     overlay.appendChild(footer);
+    overlay.appendChild(loadingEl);
     overlay.appendChild(menu);
     document.body.appendChild(overlay);
 
@@ -317,6 +331,7 @@
     document.body.style.overflow = '';
     document.getElementById('ao3-reader-entry-btn').style.display = '';
     menu.classList.remove('show');
+    hideChapterLoading();
     isActive = false;
 
     unbindReaderEvents();
@@ -339,31 +354,26 @@
     const padBottom = settings.marginBottom || 12;
     const padLeft = settings.marginLeft || 20;
     const padRight = settings.marginRight || 20;
+    const contentWidth = Math.max(100, pageWidth - padLeft - padRight);
+    const contentHeight = Math.max(100, pageHeight - padTop - padBottom);
+    const columnGap = padLeft + padRight;
 
-    // Measure total content height — include vertical padding so measurement
-    // matches the actual inner div layout (padding pushes content down)
+    // Native column fragmentation paginates the real laid-out text flow and
+    // breaks between lines, rather than clipping the rendered content.
     const measure = document.createElement('div');
-    measure.style.cssText = `
-      position: fixed;
-      left: -9999px;
-      top: 0;
-      width: ${pageWidth - padLeft - padRight}px;
-      padding: ${padTop}px 0 ${padBottom}px 0;
-      box-sizing: border-box;
-      visibility: hidden;
-      font-size: ${settings.fontSize}px;
-      line-height: ${settings.lineHeight};
-      font-family: 'Noto Serif SC', 'Source Han Serif SC', Georgia, 'Times New Roman', serif;
-    `;
-    const measureContent = prepareContentClone(contentEl);
-    measure.appendChild(measureContent);
+    measure.className = 'ao3-reader-page';
+    measure.style.cssText = buildColumnContentStyle({
+      contentWidth,
+      contentHeight,
+      columnGap,
+      hidden: true,
+    });
+    measure.appendChild(prepareContentClone(contentEl));
     document.body.appendChild(measure);
-    const totalHeight = measureContent.getBoundingClientRect().height;
-    document.body.removeChild(measure);
 
-    // Inner div total height = padTop + content + padBottom
-    const innerTotalHeight = padTop + totalHeight + padBottom;
-    const numPages = Math.max(1, Math.ceil(innerTotalHeight / pageHeight));
+    const measuredWidth = measure.scrollWidth || measure.getBoundingClientRect().width;
+    const numPages = Math.max(1, Math.ceil((measuredWidth + columnGap) / pageWidth));
+    document.body.removeChild(measure);
 
     // Cache for repaginate (so we don't re-parse the original DOM)
     cachedContentEl = contentEl;
@@ -371,42 +381,46 @@
     // Build page elements
     pagesEl.innerHTML = '';
     pagesEl.style.cssText = `
-      display: flex;
-      flex-wrap: nowrap;
       position: absolute;
       top: 0;
       left: 0;
       height: 100%;
+      width: ${numPages * pageWidth}px;
       font-size: ${settings.fontSize}px;
       line-height: ${settings.lineHeight};
     `;
 
-    for (let i = 0; i < numPages; i++) {
-      const pageDiv = document.createElement('div');
-      pageDiv.className = 'ao3-reader-page';
-      pageDiv.style.cssText = `
-        width: ${pageWidth}px;
-        height: ${pageHeight}px;
-        overflow: hidden;
-        flex-shrink: 0;
-      `;
-
-      const inner = document.createElement('div');
-      inner.style.cssText = `
-        width: ${pageWidth}px;
-        padding: ${padTop}px ${padRight}px ${padBottom}px ${padLeft}px;
-        box-sizing: border-box;
-        margin-top: -${i * pageHeight}px;
-        font-size: ${settings.fontSize}px;
-        line-height: ${settings.lineHeight};
-      `;
-      inner.appendChild(prepareContentClone(contentEl));
-
-      pageDiv.appendChild(inner);
-      pagesEl.appendChild(pageDiv);
-    }
+    const columnContent = document.createElement('div');
+    columnContent.className = 'ao3-reader-page';
+    columnContent.style.cssText = `
+      ${buildColumnContentStyle({ contentWidth, contentHeight, columnGap })}
+      position: absolute;
+      left: ${padLeft}px;
+      top: ${padTop}px;
+    `;
+    columnContent.appendChild(prepareContentClone(contentEl));
+    pagesEl.appendChild(columnContent);
 
     return numPages;
+  }
+
+  function buildColumnContentStyle({ contentWidth, contentHeight, columnGap, hidden = false }) {
+    return `
+      ${hidden ? 'position: fixed; left: -10000px; top: 0;' : ''}
+      width: ${contentWidth}px;
+      height: ${contentHeight}px;
+      overflow: visible;
+      box-sizing: border-box;
+      visibility: ${hidden ? 'hidden' : 'visible'};
+      pointer-events: ${hidden ? 'none' : 'auto'};
+      font-size: ${settings.fontSize}px;
+      line-height: ${settings.lineHeight};
+      font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC', Georgia, 'Times New Roman', serif;
+      column-width: ${contentWidth}px;
+      column-gap: ${columnGap}px;
+      column-fill: auto;
+      break-inside: auto;
+    `;
   }
 
   function updatePagePosition() {
@@ -487,8 +501,10 @@
 
     if (settings.customColor && /^#[0-9a-fA-F]{6}$/.test(settings.customColor)) {
       overlay.style.backgroundColor = settings.customColor;
+      overlay.style.setProperty('--ao3-reader-card-bg', settings.customColor);
     } else {
       overlay.style.backgroundColor = '';
+      overlay.style.removeProperty('--ao3-reader-card-bg');
     }
   }
 
@@ -693,10 +709,24 @@
     return 'https://archiveofourown.org/works/' + workId + '/chapters/' + optValue;
   }
 
+  function showChapterLoading() {
+    if (!loadingEl) return;
+    menu.classList.remove('show');
+    loadingEl.classList.add('show');
+    loadingEl.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideChapterLoading() {
+    if (!loadingEl) return;
+    loadingEl.classList.remove('show');
+    loadingEl.setAttribute('aria-hidden', 'true');
+  }
+
   async function loadChapter(url, opts = {}) {
     if (isLoadingChapter) return;
     const { updateHistory = true } = opts;
     isLoadingChapter = true;
+    showChapterLoading();
 
     // Fetch the chapter page
     let html;
@@ -706,6 +736,7 @@
       html = await resp.text();
     } catch (err) {
       isLoadingChapter = false;
+      hideChapterLoading();
       exitReadingMode();
       window.location.href = url;
       return;
@@ -726,6 +757,7 @@
     if (!userstuff && allUserstuff.length > 0) userstuff = allUserstuff[0];
     if (!userstuff) {
       isLoadingChapter = false;
+      hideChapterLoading();
       exitReadingMode();
       window.location.href = url;
       return;
@@ -795,6 +827,7 @@
     }
 
     isLoadingChapter = false;
+    hideChapterLoading();
   }
 
   // ── Event handling ──────────────────────────────────────────────────

@@ -38,14 +38,17 @@
 #ao3-reader-overlay.theme-light {
   background: #ffffff;
   color: #1a1a1a;
+  --ao3-reader-card-bg: #ffffff;
 }
 #ao3-reader-overlay.theme-sepia {
   background: #f5f0e8;
   color: #3d3027;
+  --ao3-reader-card-bg: #f5f0e8;
 }
 #ao3-reader-overlay.theme-dark {
   background: #1a1a1a;
   color: #d4d4d4;
+  --ao3-reader-card-bg: #252525;
 }
 
 /* Header */
@@ -139,6 +142,50 @@
   padding-left: 12px;
   border-left: 3px solid rgba(128,128,128,0.3);
   font-style: italic;
+}
+
+/* Chapter loading */
+#ao3-reader-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.18);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+#ao3-reader-loading.show {
+  display: flex;
+}
+#ao3-reader-loading .loading-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 999px;
+  color: inherit;
+  background: var(--ao3-reader-card-bg, #fff);
+  border: 1px solid rgba(128,128,128,0.24);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+}
+#ao3-reader-loading .loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(128,128,128,0.35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: ao3-reader-spin 0.8s linear infinite;
+}
+#ao3-reader-loading .loading-text {
+  font-size: 14px;
+  white-space: nowrap;
+}
+@keyframes ao3-reader-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Footer */
@@ -249,4 +296,3 @@
   font-size: 15px;
   cursor: pointer;
 }
-
