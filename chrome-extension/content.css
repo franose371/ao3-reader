@@ -144,6 +144,22 @@
   font-style: italic;
 }
 
+/* Chapter summary */
+.ao3-reader-chapter-summary {
+  margin: 0 0 14px 0 !important;
+  padding: 8px 12px;
+  border-left: 3px solid rgba(128,128,128,0.4);
+  font-style: italic;
+  opacity: 0.85;
+}
+.ao3-reader-chapter-summary p {
+  margin: 0 0 4px 0;
+  text-indent: 0 !important;
+}
+.ao3-reader-chapter-summary hr {
+  display: none;
+}
+
 /* Chapter loading */
 #ao3-reader-loading {
   position: absolute;
@@ -181,6 +197,14 @@
 #ao3-reader-loading .loading-text {
   font-size: 14px;
   white-space: nowrap;
+}
+#ao3-reader-loading .error-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+#ao3-reader-loading.error .loading-card {
+  border-color: rgba(200,50,50,0.4);
+  box-shadow: 0 8px 28px rgba(200,50,50,0.18);
 }
 @keyframes ao3-reader-spin {
   to {

@@ -166,6 +166,22 @@
       font-style: italic;
     }
 
+    /* Chapter summary */
+    .ao3-reader-chapter-summary {
+      margin: 0 0 14px 0 !important;
+      padding: 8px 12px;
+      border-left: 3px solid rgba(128,128,128,0.4);
+      font-style: italic;
+      opacity: 0.85;
+    }
+    .ao3-reader-chapter-summary p {
+      margin: 0 0 4px 0;
+      text-indent: 0 !important;
+    }
+    .ao3-reader-chapter-summary hr {
+      display: none;
+    }
+
     /* Chapter loading */
     #ao3-reader-loading {
       position: absolute;
@@ -203,6 +219,14 @@
     #ao3-reader-loading .loading-text {
       font-size: 14px;
       white-space: nowrap;
+    }
+    #ao3-reader-loading .error-icon {
+      font-size: 22px;
+      line-height: 1;
+    }
+    #ao3-reader-loading.error .loading-card {
+      border-color: rgba(200,50,50,0.4);
+      box-shadow: 0 8px 28px rgba(200,50,50,0.18);
     }
     @keyframes ao3-reader-spin {
       to {
@@ -347,6 +371,7 @@
   let touchStartY = 0;
   let lastPageActionTime = 0;
   let cachedContentEl = null;   // for repaginate after AJAX chapter load
+  let chapterSummary = null;    // cloned DOM node for chapter summary
 
   // DOM refs (populated when reader is created)
   let overlay, header, viewport, pagesEl, footer, menu, pageIndicator, loadingEl;
@@ -418,6 +443,10 @@
     if (authorEl) {
       chapterTitle = workTitle + ' - ' + authorEl.textContent.trim();
     }
+
+    // Get chapter summary (if exists)
+    const summaryBlock = document.querySelector('.chapter.preface .summary blockquote.userstuff');
+    chapterSummary = summaryBlock ? summaryBlock.cloneNode(true) : null;
 
     result.hasContent = true;
     result.contentEl = userstuff;
@@ -657,6 +686,14 @@
     clone.querySelectorAll('.landmark').forEach((el) => el.remove());
     const toast = clone.querySelector('#toast');
     if (toast) toast.remove();
+
+    // Prepend chapter summary at the beginning
+    if (chapterSummary) {
+      const summaryClone = chapterSummary.cloneNode(true);
+      summaryClone.classList.add('ao3-reader-chapter-summary');
+      clone.insertBefore(summaryClone, clone.firstChild);
+    }
+
     return clone;
   }
 
@@ -1026,14 +1063,38 @@
   function showChapterLoading() {
     if (!loadingEl) return;
     menu.classList.remove('show');
+    // Restore loading spinner HTML (in case error state was previously shown)
+    loadingEl.querySelector('.loading-card').innerHTML = `
+      <div class="loading-spinner"></div>
+      <div class="loading-text">章节加载中...</div>
+    `;
+    loadingEl.classList.remove('error');
     loadingEl.classList.add('show');
     loadingEl.setAttribute('aria-hidden', 'false');
   }
 
   function hideChapterLoading() {
     if (!loadingEl) return;
-    loadingEl.classList.remove('show');
+    loadingEl.classList.remove('show', 'error');
     loadingEl.setAttribute('aria-hidden', 'true');
+  }
+
+  function showChapterError(message) {
+    if (!loadingEl) return;
+    const card = loadingEl.querySelector('.loading-card');
+    if (card) {
+      card.innerHTML = `
+        <div class="error-icon">⚠</div>
+        <div class="loading-text">${escapeHtml(message)}</div>
+      `;
+      card.style.cursor = 'pointer';
+      card.onclick = () => hideChapterLoading();
+    }
+    loadingEl.classList.add('show', 'error');
+    loadingEl.setAttribute('aria-hidden', 'false');
+    // Auto-dismiss after 4 seconds
+    clearTimeout(loadingEl._errorTimer);
+    loadingEl._errorTimer = setTimeout(() => hideChapterLoading(), 4000);
   }
 
   async function loadChapter(url, opts = {}) {
@@ -1050,9 +1111,7 @@
       html = await resp.text();
     } catch (err) {
       isLoadingChapter = false;
-      hideChapterLoading();
-      exitReadingMode();
-      window.location.href = url;
+      showChapterError('章节加载失败，请检查网络连接后重试');
       return;
     }
 
@@ -1071,9 +1130,7 @@
     if (!userstuff && allUserstuff.length > 0) userstuff = allUserstuff[0];
     if (!userstuff) {
       isLoadingChapter = false;
-      hideChapterLoading();
-      exitReadingMode();
-      window.location.href = url;
+      showChapterError('章节内容解析失败，该页面可能不是有效的AO3章节页面');
       return;
     }
 
@@ -1092,6 +1149,10 @@
     if (authorEl) {
       chapterTitle = workTitle + ' - ' + authorEl.textContent.trim();
     }
+
+    // Get chapter summary from fetched page
+    const summaryBlock = doc.querySelector('.chapter.preface .summary blockquote.userstuff');
+    chapterSummary = summaryBlock ? summaryBlock : null;
 
     // Chapter navigation
     const prevLink = doc.querySelector('li.chapter.previous a');

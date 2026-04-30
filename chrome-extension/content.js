@@ -29,6 +29,7 @@
   let touchStartY = 0;
   let lastPageActionTime = 0;
   let cachedContentEl = null;   // for repaginate after AJAX chapter load
+  let chapterSummary = null;    // cloned DOM node for chapter summary
 
   // DOM refs (populated when reader is created)
   let overlay, header, viewport, pagesEl, footer, menu, pageIndicator, loadingEl;
@@ -104,6 +105,10 @@
     if (authorEl) {
       chapterTitle = workTitle + ' - ' + authorEl.textContent.trim();
     }
+
+    // Get chapter summary (if exists)
+    const summaryBlock = document.querySelector('.chapter.preface .summary blockquote.userstuff');
+    chapterSummary = summaryBlock ? summaryBlock.cloneNode(true) : null;
 
     result.hasContent = true;
     result.contentEl = userstuff;
@@ -343,6 +348,14 @@
     clone.querySelectorAll('.landmark').forEach((el) => el.remove());
     const toast = clone.querySelector('#toast');
     if (toast) toast.remove();
+
+    // Prepend chapter summary at the beginning
+    if (chapterSummary) {
+      const summaryClone = chapterSummary.cloneNode(true);
+      summaryClone.classList.add('ao3-reader-chapter-summary');
+      clone.insertBefore(summaryClone, clone.firstChild);
+    }
+
     return clone;
   }
 
@@ -712,14 +725,38 @@
   function showChapterLoading() {
     if (!loadingEl) return;
     menu.classList.remove('show');
+    // Restore loading spinner HTML (in case error state was previously shown)
+    loadingEl.querySelector('.loading-card').innerHTML = `
+      <div class="loading-spinner"></div>
+      <div class="loading-text">章节加载中...</div>
+    `;
+    loadingEl.classList.remove('error');
     loadingEl.classList.add('show');
     loadingEl.setAttribute('aria-hidden', 'false');
   }
 
   function hideChapterLoading() {
     if (!loadingEl) return;
-    loadingEl.classList.remove('show');
+    loadingEl.classList.remove('show', 'error');
     loadingEl.setAttribute('aria-hidden', 'true');
+  }
+
+  function showChapterError(message) {
+    if (!loadingEl) return;
+    const card = loadingEl.querySelector('.loading-card');
+    if (card) {
+      card.innerHTML = `
+        <div class="error-icon">⚠</div>
+        <div class="loading-text">${escapeHtml(message)}</div>
+      `;
+      card.style.cursor = 'pointer';
+      card.onclick = () => hideChapterLoading();
+    }
+    loadingEl.classList.add('show', 'error');
+    loadingEl.setAttribute('aria-hidden', 'false');
+    // Auto-dismiss after 4 seconds
+    clearTimeout(loadingEl._errorTimer);
+    loadingEl._errorTimer = setTimeout(() => hideChapterLoading(), 4000);
   }
 
   async function loadChapter(url, opts = {}) {
@@ -736,11 +773,8 @@
       html = await resp.text();
     } catch (err) {
       isLoadingChapter = false;
-      hideChapterLoading();
-      exitReadingMode();
-      window.location.href = url;
+      showChapterError('章节加载失败，请检查网络连接后重试');
       return;
-    }
 
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -757,9 +791,7 @@
     if (!userstuff && allUserstuff.length > 0) userstuff = allUserstuff[0];
     if (!userstuff) {
       isLoadingChapter = false;
-      hideChapterLoading();
-      exitReadingMode();
-      window.location.href = url;
+      showChapterError('章节内容解析失败，该页面可能不是有效的AO3章节页面');
       return;
     }
 
@@ -778,6 +810,10 @@
     if (authorEl) {
       chapterTitle = workTitle + ' - ' + authorEl.textContent.trim();
     }
+
+    // Get chapter summary from fetched page
+    const summaryBlock = doc.querySelector('.chapter.preface .summary blockquote.userstuff');
+    chapterSummary = summaryBlock ? summaryBlock : null;
 
     // Chapter navigation
     const prevLink = doc.querySelector('li.chapter.previous a');
