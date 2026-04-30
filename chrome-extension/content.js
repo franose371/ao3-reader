@@ -107,7 +107,8 @@
     }
 
     // Get chapter summary (if exists)
-    const summaryBlock = document.querySelector('.chapter.preface .summary blockquote.userstuff');
+    const summaryBlock = document.querySelector('.preface .summary blockquote.userstuff')
+      || document.querySelector('.chapter.preface .summary blockquote.userstuff');
     chapterSummary = summaryBlock ? summaryBlock.cloneNode(true) : null;
 
     result.hasContent = true;
@@ -812,8 +813,10 @@
     }
 
     // Get chapter summary from fetched page
-    const summaryBlock = doc.querySelector('.chapter.preface .summary blockquote.userstuff');
-    chapterSummary = summaryBlock ? summaryBlock : null;
+    const summaryBlock = doc.querySelector('.preface .summary blockquote.userstuff')
+      || doc.querySelector('.chapter.preface .summary blockquote.userstuff');
+    // Import node from parsed document into current document
+    chapterSummary = summaryBlock ? document.importNode(summaryBlock, true) : null;
 
     // Chapter navigation
     const prevLink = doc.querySelector('li.chapter.previous a');

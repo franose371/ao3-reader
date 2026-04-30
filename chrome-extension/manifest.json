@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AO3 Reader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "优化AO3网站在手机端的阅读体验，支持左右点击翻页的分页阅读模式",
   "permissions": ["storage"],
   "host_permissions": ["https://archiveofourown.org/*"],

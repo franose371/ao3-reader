@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 Reader
 // @namespace    https://github.com/franose371/ao3-reader
-// @version      1.0.0
+// @version      1.1.0
 // @description  优化AO3网站在手机端的阅读体验，支持左右点击翻页的分页阅读模式
 // @author       franose371
 // @homepageURL  https://github.com/franose371/ao3-reader
@@ -445,7 +445,8 @@
     }
 
     // Get chapter summary (if exists)
-    const summaryBlock = document.querySelector('.chapter.preface .summary blockquote.userstuff');
+    const summaryBlock = document.querySelector('.preface .summary blockquote.userstuff')
+      || document.querySelector('.chapter.preface .summary blockquote.userstuff');
     chapterSummary = summaryBlock ? summaryBlock.cloneNode(true) : null;
 
     result.hasContent = true;
@@ -1151,8 +1152,10 @@
     }
 
     // Get chapter summary from fetched page
-    const summaryBlock = doc.querySelector('.chapter.preface .summary blockquote.userstuff');
-    chapterSummary = summaryBlock ? summaryBlock : null;
+    const summaryBlock = doc.querySelector('.preface .summary blockquote.userstuff')
+      || doc.querySelector('.chapter.preface .summary blockquote.userstuff');
+    // Import node from parsed document into current document
+    chapterSummary = summaryBlock ? document.importNode(summaryBlock, true) : null;
 
     // Chapter navigation
     const prevLink = doc.querySelector('li.chapter.previous a');
