@@ -3,14 +3,17 @@ chrome.runtime.onInstalled.addListener(() => {
     if (!items.ao3ReaderSettings) {
       chrome.storage.sync.set({
         ao3ReaderSettings: {
-          swapLR: false,
+          swapLR: 'leftright',
           fontSize: 18,
           theme: 'light',
           lineHeight: 1.8,
           marginTop: 12,
           marginBottom: 12,
           marginLeft: 20,
-          marginRight: 20
+          marginRight: 20,
+          pageScroll: false,
+          pageScrollDirection: 'updown',
+          autoEnterReader: false
         }
       });
     }

@@ -4,7 +4,7 @@
 
   // ── Default settings ────────────────────────────────────────────────
   const DEFAULTS = {
-    swapLR: false,
+    swapLR: 'leftright',
     fontSize: 18,
     theme: 'light',
     lineHeight: 1.8,
@@ -13,6 +13,9 @@
     marginBottom: 12,
     marginLeft: 20,
     marginRight: 20,
+    pageScroll: false,
+    pageScrollDirection: 'updown',
+    autoEnterReader: false,
   };
 
   // ── State ───────────────────────────────────────────────────────────
@@ -30,6 +33,9 @@
   let lastPageActionTime = 0;
   let cachedContentEl = null;   // for repaginate after AJAX chapter load
   let chapterSummary = null;    // cloned DOM node for chapter summary
+  let pageScrollEventsBound = false;
+  let psTouchStartX = 0;
+  let psTouchStartY = 0;
 
   // DOM refs (populated when reader is created)
   let overlay, header, viewport, pagesEl, footer, menu, pageIndicator, loadingEl;
@@ -40,6 +46,10 @@
       chrome.storage.sync.get('ao3ReaderSettings', (data) => {
         if (data.ao3ReaderSettings) {
           settings = { ...DEFAULTS, ...data.ao3ReaderSettings };
+          // Migrate old boolean swapLR to string
+          if (typeof settings.swapLR === 'boolean') {
+            settings.swapLR = settings.swapLR ? 'rightleft' : 'leftright';
+          }
         }
         resolve();
       });
@@ -219,8 +229,9 @@
         <div class="menu-row">
           <label>翻页方向</label>
           <select id="ao3-menu-swap">
-            <option value="0" ${!settings.swapLR ? 'selected' : ''}>左=上页, 右=下页</option>
-            <option value="1" ${settings.swapLR ? 'selected' : ''}>左=下页, 右=上页</option>
+            <option value="leftright" ${settings.swapLR === 'leftright' ? 'selected' : ''}>左右</option>
+            <option value="rightleft" ${settings.swapLR === 'rightleft' ? 'selected' : ''}>右左</option>
+            <option value="updown" ${settings.swapLR === 'updown' ? 'selected' : ''}>上下</option>
           </select>
         </div>
         <div class="menu-row">
@@ -282,6 +293,31 @@
             </select>
           </div>
         </div>
+        <div class="menu-section-label">跳屏翻页</div>
+        <div class="menu-row">
+          <label>跳屏翻页</label>
+          <select id="ao3-menu-pagescroll">
+            <option value="0" ${!settings.pageScroll ? 'selected' : ''}>关闭</option>
+            <option value="1" ${settings.pageScroll ? 'selected' : ''}>开启</option>
+          </select>
+        </div>
+        <div class="menu-row" id="ao3-menu-pagescroll-dir-row" style="${settings.pageScroll ? '' : 'display:none;'}">
+          <label>跳屏方向</label>
+          <select id="ao3-menu-pagescroll-dir">
+            <option value="updown" ${settings.pageScrollDirection === 'updown' ? 'selected' : ''}>上下</option>
+            <option value="leftright" ${settings.pageScrollDirection === 'leftright' ? 'selected' : ''}>左右</option>
+            <option value="rightleft" ${settings.pageScrollDirection === 'rightleft' ? 'selected' : ''}>右左</option>
+          </select>
+        </div>
+        <p style="font-size:11px;color:#999;margin:0;">点按跳屏区域跳至上/下一屏，无滚动动画</p>
+        <div class="menu-row" style="margin-top:10px;">
+          <label>自动进入阅读</label>
+          <select id="ao3-menu-autoenter">
+            <option value="0" ${!settings.autoEnterReader ? 'selected' : ''}>关闭</option>
+            <option value="1" ${settings.autoEnterReader ? 'selected' : ''}>开启</option>
+          </select>
+        </div>
+        <p style="font-size:11px;color:#999;margin:0;">开启后，进入作品页自动打开阅读模式</p>
         <button id="ao3-menu-exit" class="btn-primary">退出阅读模式</button>
       </div>
     `;
@@ -327,6 +363,7 @@
     updatePagePosition();
     updatePageIndicator();
 
+    unbindPageScrollEvents();
     bindReaderEvents();
   }
 
@@ -341,6 +378,133 @@
     isActive = false;
 
     unbindReaderEvents();
+
+    // Re-enable page scroll if setting is on
+    if (settings.pageScroll) bindPageScrollEvents();
+  }
+
+  // ── Page scroll (regular page navigation) ───────────────────────────
+  function scrollPageDown() {
+    window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'instant' });
+  }
+
+  function scrollPageUp() {
+    window.scrollBy({ top: -window.innerHeight * 0.9, behavior: 'instant' });
+  }
+
+  // Return 'up' | 'down' | null based on tap position and current direction setting
+  function getTapScrollDir(x, y) {
+    const dir = settings.pageScrollDirection;
+    if (dir === 'updown') {
+      return y < window.innerHeight / 2 ? 'up' : 'down';
+    }
+    if (dir === 'leftright') {
+      if (x < window.innerWidth / 3) return 'up';
+      if (x > window.innerWidth * 2 / 3) return 'down';
+      return null;
+    }
+    // rightleft
+    if (x > window.innerWidth * 2 / 3) return 'up';
+    if (x < window.innerWidth / 3) return 'down';
+    return null;
+  }
+
+  // Return 'up' | 'down' for a horizontal swipe
+  function getSwipeScrollDir(dx) {
+    if (settings.pageScrollDirection === 'rightleft') {
+      return dx > 0 ? 'up' : 'down';
+    }
+    // updown and leftright both: right→down, left→up
+    return dx > 0 ? 'down' : 'up';
+  }
+
+  function doScrollAction(dir) {
+    if (dir === 'up') scrollPageUp();
+    else if (dir === 'down') scrollPageDown();
+  }
+
+  function onPageScrollClick(e) {
+    if (isActive) return;
+    if (isInteractiveTarget(e.target)) return;
+    const dir = getTapScrollDir(e.clientX, e.clientY);
+    if (dir) {
+      e.preventDefault();
+      doScrollAction(dir);
+    }
+  }
+
+  function onPageScrollTouchStart(e) {
+    if (isActive) return;
+    if (e.touches.length === 1) {
+      psTouchStartX = e.touches[0].clientX;
+      psTouchStartY = e.touches[0].clientY;
+    }
+  }
+
+  function onPageScrollTouchMove(e) {
+    if (isActive) return;
+    const dx = e.touches[0].clientX - psTouchStartX;
+    const dy = e.touches[0].clientY - psTouchStartY;
+    // Block native scroll for horizontal swipes so scrollBy jump is clean
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+      e.preventDefault();
+    }
+  }
+
+  function onPageScrollTouchEnd(e) {
+    if (isActive) return;
+    if (isInteractiveTarget(e.target)) return;
+
+    const dx = e.changedTouches[0].clientX - psTouchStartX;
+    const dy = e.changedTouches[0].clientY - psTouchStartY;
+
+    // Horizontal swipe
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+      e.preventDefault();
+      doScrollAction(getSwipeScrollDir(dx));
+      return;
+    }
+
+    // Tap detection
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+      const dir = getTapScrollDir(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      if (dir) {
+        e.preventDefault();
+        doScrollAction(dir);
+      }
+    }
+  }
+
+  function onPageScrollKeyDown(e) {
+    if (isActive) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      doScrollAction('up');
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      doScrollAction('down');
+    }
+  }
+
+  function bindPageScrollEvents() {
+    if (pageScrollEventsBound) return;
+    document.addEventListener('click', onPageScrollClick);
+    document.addEventListener('touchstart', onPageScrollTouchStart, { passive: true });
+    document.addEventListener('touchmove', onPageScrollTouchMove, { passive: false });
+    document.addEventListener('touchend', onPageScrollTouchEnd);
+    document.addEventListener('keydown', onPageScrollKeyDown);
+    pageScrollEventsBound = true;
+  }
+
+  function unbindPageScrollEvents() {
+    if (!pageScrollEventsBound) return;
+    document.removeEventListener('click', onPageScrollClick);
+    document.removeEventListener('touchstart', onPageScrollTouchStart);
+    document.removeEventListener('touchmove', onPageScrollTouchMove);
+    document.removeEventListener('touchend', onPageScrollTouchEnd);
+    document.removeEventListener('keydown', onPageScrollKeyDown);
+    pageScrollEventsBound = false;
   }
 
   // ── Pagination ──────────────────────────────────────────────────────
@@ -494,14 +658,25 @@
     updatePageIndicator();
   }
 
-  function handleTap(clientX) {
-    const vw = window.innerWidth;
-    const third = vw / 3;
+  function handleTap(clientX, clientY) {
+    const dir = settings.swapLR;
+    let action = null;
 
-    if (clientX < third) {
-      settings.swapLR ? goToNextPage() : goToPrevPage();
-    } else if (clientX > third * 2) {
-      settings.swapLR ? goToPrevPage() : goToNextPage();
+    if (dir === 'updown') {
+      if (clientY < window.innerHeight * 0.4) action = 'prev';
+      else if (clientY > window.innerHeight * 0.6) action = 'next';
+    } else if (dir === 'leftright') {
+      if (clientX < window.innerWidth / 3) action = 'prev';
+      else if (clientX > window.innerWidth * 2 / 3) action = 'next';
+    } else { // rightleft
+      if (clientX > window.innerWidth * 2 / 3) action = 'prev';
+      else if (clientX < window.innerWidth / 3) action = 'next';
+    }
+
+    if (action === 'prev') {
+      goToPrevPage();
+    } else if (action === 'next') {
+      goToNextPage();
     } else {
       toggleMenu();
       lastPageActionTime = Date.now();
@@ -533,7 +708,7 @@
       const themeSel = document.getElementById('ao3-menu-theme');
       const colorInput = document.getElementById('ao3-menu-custom-color');
       const colorRow = document.getElementById('ao3-menu-color-row');
-      if (swapSel) swapSel.value = settings.swapLR ? '1' : '0';
+      if (swapSel) swapSel.value = settings.swapLR;
       if (fontVal) fontVal.textContent = settings.fontSize;
       if (themeSel) themeSel.value = settings.theme;
       if (colorInput) {
@@ -552,6 +727,14 @@
       if (mlSel) mlSel.value = String(settings.marginLeft || 20);
       const mrSel = document.getElementById('ao3-menu-mr');
       if (mrSel) mrSel.value = String(settings.marginRight || 20);
+      const psSel = document.getElementById('ao3-menu-pagescroll');
+      if (psSel) psSel.value = settings.pageScroll ? '1' : '0';
+      const psDirSel = document.getElementById('ao3-menu-pagescroll-dir');
+      if (psDirSel) psDirSel.value = settings.pageScrollDirection;
+      const psDirRow = document.getElementById('ao3-menu-pagescroll-dir-row');
+      if (psDirRow) psDirRow.style.display = settings.pageScroll ? '' : 'none';
+      const aeSel = document.getElementById('ao3-menu-autoenter');
+      if (aeSel) aeSel.value = settings.autoEnterReader ? '1' : '0';
       menu.classList.add('show');
     }
   }
@@ -576,7 +759,7 @@
     const swapSel = document.getElementById('ao3-menu-swap');
     if (swapSel) {
       swapSel.addEventListener('change', function () {
-        settings.swapLR = this.value === '1';
+        settings.swapLR = this.value;
         saveSettings();
       });
     }
@@ -663,6 +846,42 @@
         repaginate();
       });
     });
+
+    // Page scroll toggle
+    const psSel = document.getElementById('ao3-menu-pagescroll');
+    const psDirRow = document.getElementById('ao3-menu-pagescroll-dir-row');
+    if (psSel) {
+      psSel.addEventListener('change', function () {
+        settings.pageScroll = this.value === '1';
+        if (psDirRow) psDirRow.style.display = this.value === '1' ? '' : 'none';
+        saveSettings();
+        if (!isActive) {
+          if (settings.pageScroll) {
+            bindPageScrollEvents();
+          } else {
+            unbindPageScrollEvents();
+          }
+        }
+      });
+    }
+
+    // Page scroll direction
+    const psDirSel = document.getElementById('ao3-menu-pagescroll-dir');
+    if (psDirSel) {
+      psDirSel.addEventListener('change', function () {
+        settings.pageScrollDirection = this.value;
+        saveSettings();
+      });
+    }
+
+    // Auto-enter reading mode
+    const aeSel = document.getElementById('ao3-menu-autoenter');
+    if (aeSel) {
+      aeSel.addEventListener('change', function () {
+        settings.autoEnterReader = this.value === '1';
+        saveSettings();
+      });
+    }
   }
 
   // ── Chapter navigation ──────────────────────────────────────────────
@@ -880,7 +1099,7 @@
     // (mobile browsers fire both touchend and click for the same tap)
     if (Date.now() - lastPageActionTime < 500) return;
     e.preventDefault();
-    handleTap(e.clientX);
+    handleTap(e.clientX, e.clientY);
   }
 
   function onViewportTouchStart(e) {
@@ -898,19 +1117,29 @@
     const dy = e.changedTouches[0].clientY - touchStartY;
 
     // Swipe detection
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-      e.preventDefault();
-      if (dx > 0) {
-        settings.swapLR ? goToNextPage() : goToPrevPage();
-      } else {
-        settings.swapLR ? goToPrevPage() : goToNextPage();
+    const rd = settings.swapLR;
+    if (rd === 'updown') {
+      // Vertical swipe
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 40) {
+        e.preventDefault();
+        if (dy > 0) goToNextPage();
+        else goToPrevPage();
+        return;
       }
-      return;
+    } else {
+      // Horizontal swipe
+      const reversed = rd === 'rightleft';
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+        e.preventDefault();
+        if (dx > 0) reversed ? goToPrevPage() : goToNextPage();
+        else reversed ? goToNextPage() : goToPrevPage();
+        return;
+      }
     }
 
     // Tap detection (minimal movement)
     if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-      handleTap(e.changedTouches[0].clientX);
+      handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }
   }
 
@@ -920,9 +1149,11 @@
       return;
     }
     if (e.key === 'ArrowLeft') {
-      settings.swapLR ? goToNextPage() : goToPrevPage();
+      if (settings.swapLR === 'rightleft') goToNextPage();
+      else goToPrevPage();
     } else if (e.key === 'ArrowRight') {
-      settings.swapLR ? goToPrevPage() : goToNextPage();
+      if (settings.swapLR === 'rightleft') goToPrevPage();
+      else goToNextPage();
     } else if (e.key === 'Escape') {
       exitReadingMode();
     }
@@ -1016,12 +1247,19 @@
   async function init() {
     await loadSettings();
 
+    // Page scroll works on all matched pages (works, search, etc.)
+    if (settings.pageScroll) bindPageScrollEvents();
+
     // Check if we're on a work page with content
     const parsed = parseAO3Page();
     if (!parsed.hasContent) return;
 
     createReaderUI();
     setupMessageListener();
+
+    if (settings.autoEnterReader) {
+      enterReadingMode();
+    }
   }
 
   if (document.readyState === 'loading') {

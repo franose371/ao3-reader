@@ -11,10 +11,11 @@
   <h1>AO3 Reader</h1>
 
   <div class="setting-row">
-    <label>点击翻页方向</label>
+    <label>翻页方向</label>
     <select id="swapLR">
-      <option value="0">左=上一页, 右=下一页</option>
-      <option value="1">左=下一页, 右=上一页</option>
+      <option value="leftright">左右</option>
+      <option value="rightleft">右左</option>
+      <option value="updown">上下</option>
     </select>
   </div>
 
@@ -78,6 +79,31 @@
       pattern="^#[0-9a-fA-F]{6}$"
       style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
   </div>
+
+  <div class="setting-row">
+    <label>点击跳屏翻页</label>
+    <select id="pageScroll">
+      <option value="0">关闭</option>
+      <option value="1">开启</option>
+    </select>
+  </div>
+  <div class="setting-row">
+    <label>跳屏方向</label>
+    <select id="pageScrollDirection">
+      <option value="updown">上下</option>
+      <option value="leftright">左右</option>
+      <option value="rightleft">右左</option>
+    </select>
+  </div>
+  <p class="hint" style="margin-top:0;margin-bottom:10px;">点击对应区域跳至上/下一屏，无滚动动画</p>
+  <div class="setting-row">
+    <label>自动进入阅读</label>
+    <select id="autoEnterReader">
+      <option value="0">关闭</option>
+      <option value="1">开启</option>
+    </select>
+  </div>
+  <p class="hint" style="margin-top:0;margin-bottom:10px;">开启后，进入作品页自动打开阅读模式</p>
 
   <button id="saveBtn" class="btn-primary">保存设置</button>
   <p class="hint">打开AO3作品页面，点击浮动按钮进入阅读模式</p>
