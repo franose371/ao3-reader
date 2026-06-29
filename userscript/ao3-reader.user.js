@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 Reader
 // @namespace    https://github.com/franose371/ao3-reader
-// @version      1.2.0
+// @version      1.2.1
 // @description  优化AO3网站在手机端的阅读体验，支持分页阅读、跳屏翻页、多主题切换
 // @author       franose371
 // @homepageURL  https://github.com/franose371/ao3-reader
@@ -387,6 +387,7 @@
   let pageScrollEventsBound = false;
   let psTouchStartX = 0;
   let psTouchStartY = 0;
+  const chapterCache = new Map();  // url -> chapter data, so popstate can render without refetch
 
   // DOM refs (populated when reader is created)
   let overlay, header, viewport, pagesEl, footer, menu, pageIndicator, loadingEl;
@@ -709,6 +710,21 @@
     totalPages = numPages;
     updatePagePosition();
     updatePageIndicator();
+
+    // Cache the initial chapter so that popstate back to this URL renders
+    // from memory instead of re-fetching the page we just rendered.
+    const initialKey = normalizeChapterUrl(window.location.href);
+    if (initialKey && !chapterCache.has(initialKey)) {
+      const tempContainer = document.createElement('div');
+      tempContainer.appendChild(parsed.contentEl.cloneNode(true));
+      chapterCache.set(initialKey, {
+        tempContainer,
+        chapterTitle,
+        workTitle,
+        chapterLinks: { ...chapterLinks },
+        chapterSummary: chapterSummary ? chapterSummary.cloneNode(true) : null,
+      });
+    }
 
     unbindPageScrollEvents();
     bindReaderEvents();
@@ -1289,6 +1305,23 @@
     return 'https://archiveofourown.org/works/' + workId + '/chapters/' + optValue;
   }
 
+  // Strip fragment and trailing slash so that the same chapter reached via
+  // different links (and the URL the browser restores on popstate) maps to
+  // the same cache entry.
+  function normalizeChapterUrl(url) {
+    if (!url) return null;
+    try {
+      const u = new URL(url, window.location.href);
+      u.hash = '';
+      let path = u.pathname;
+      if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+      u.pathname = path;
+      return u.href;
+    } catch {
+      return url;
+    }
+  }
+
   function showChapterLoading() {
     if (!loadingEl) return;
     menu.classList.remove('show');
@@ -1323,13 +1356,25 @@
     loadingEl.setAttribute('aria-hidden', 'false');
     // Auto-dismiss after 4 seconds
     clearTimeout(loadingEl._errorTimer);
-    loadingEl._errorTimer = setTimeout(() => hideChapterLoading(), 4000);
+    loadingEl._errorTimer = setTimeout(() => hideChapterLoading(), 2500);
   }
 
   async function loadChapter(url, opts = {}) {
     if (isLoadingChapter) return;
     const { updateHistory = true } = opts;
     isLoadingChapter = true;
+
+    const cacheKey = normalizeChapterUrl(url);
+    const cached = cacheKey ? chapterCache.get(cacheKey) : null;
+
+    if (cached) {
+      // Render from cache — no network request needed (e.g. browser back)
+      applyChapterData(cached, url, { updateHistory });
+      isLoadingChapter = false;
+      hideChapterLoading();
+      return;
+    }
+
     showChapterLoading();
 
     // Fetch the chapter page
@@ -1340,7 +1385,20 @@
       html = await resp.text();
     } catch (err) {
       isLoadingChapter = false;
-      showChapterError('章节加载失败，请检查网络连接后重试');
+      const statusMatch = err.message.match(/HTTP (\d+)/);
+      const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+      if (status === 403 || status === 503) {
+        showChapterError('AO3 正在验证浏览器身份，请等待片刻后重试');
+      } else {
+        showChapterError('章节加载失败，请检查网络后重试');
+      }
+      return;
+    }
+
+    // Detect Cloudflare challenge in response HTML
+    if (html.includes('cf-browser-verify') || html.includes('Just a moment') || html.includes('_cf_chl_opt')) {
+      isLoadingChapter = false;
+      showChapterError('AO3 正在验证浏览器身份，请等待片刻后重试');
       return;
     }
 
@@ -1406,33 +1464,51 @@
       chapterLinks.select = null;
     }
 
-    // Update UI
-    const titleSpan = header.querySelector('.chapter-title');
-    if (titleSpan) titleSpan.textContent = chapterTitle;
-
     // Re-paginate with new content
     const tempContainer = document.createElement('div');
     while (userstuff.firstChild) {
       tempContainer.appendChild(userstuff.firstChild);
     }
 
-    const numPages = renderPages(tempContainer);
+    const data = {
+      tempContainer,
+      chapterTitle,
+      workTitle,
+      chapterLinks: { ...chapterLinks },
+      chapterSummary: chapterSummary ? chapterSummary.cloneNode(true) : null,
+    };
+    applyChapterData(data, url, { updateHistory });
+
+    if (cacheKey) chapterCache.set(cacheKey, data);
+
+    isLoadingChapter = false;
+    hideChapterLoading();
+  }
+
+  // Render an already-parsed chapter payload (either freshly fetched or pulled
+  // from the history cache). Handles UI update, pagination and history.
+  function applyChapterData(data, url, opts = {}) {
+    const { updateHistory = true } = opts;
+    chapterTitle = data.chapterTitle;
+    workTitle = data.workTitle;
+    chapterLinks = { ...data.chapterLinks };
+    chapterSummary = data.chapterSummary;
+
+    const titleSpan = header.querySelector('.chapter-title');
+    if (titleSpan) titleSpan.textContent = chapterTitle;
+
+    const numPages = renderPages(data.tempContainer);
     totalPages = numPages;
     currentPage = 0;
     updatePagePosition();
     updatePageIndicator();
 
-    // Update footer navigation
     footer.innerHTML = buildFooterHTML();
     bindFooterEvents();
 
-    // Update URL (skip for popstate — browser already handled it)
     if (updateHistory) {
       history.pushState({ ao3Reader: true }, '', url);
     }
-
-    isLoadingChapter = false;
-    hideChapterLoading();
   }
 
   // ── Event handling ──────────────────────────────────────────────────
