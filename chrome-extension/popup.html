@@ -10,15 +10,32 @@
 <div class="popup-container">
   <h1>AO3 Reader</h1>
 
+  <div class="section-label">显示</div>
   <div class="setting-row">
-    <label>翻页方向</label>
-    <select id="swapLR">
-      <option value="leftright">左右</option>
-      <option value="rightleft">右左</option>
-      <option value="updown">上下</option>
+    <label>主题</label>
+    <select id="theme">
+      <option value="light">浅色</option>
+      <option value="sepia">护眼</option>
+      <option value="dark">深色</option>
+      <option value="custom">自定义</option>
     </select>
   </div>
-
+  <div class="setting-row" id="colorRow" style="display:none">
+    <label>背景色</label>
+    <div class="color-group">
+      <span id="colorSwatch" class="color-swatch"></span>
+      <input type="text" id="customColor" placeholder="#f5f0e8"
+        pattern="^#[0-9a-fA-F]{6}$">
+    </div>
+  </div>
+  <div class="setting-row" id="textColorRow" style="display:none">
+    <label>文字色</label>
+    <div class="color-group">
+      <span id="textColorSwatch" class="color-swatch" style="background:#1a1a1a;"></span>
+      <input type="text" id="customTextColor" placeholder="#1a1a1a"
+        pattern="^#[0-9a-fA-F]{6}$">
+    </div>
+  </div>
   <div class="setting-row">
     <label>字号</label>
     <div class="btn-group">
@@ -27,7 +44,6 @@
       <button id="fontSizeUp">+</button>
     </div>
   </div>
-
   <div class="setting-row">
     <label>行高</label>
     <select id="lineHeight">
@@ -38,64 +54,53 @@
     </select>
   </div>
 
-  <div class="setting-row">
-    <label>上边距</label>
-    <select id="marginTop">
-      <option value="0">0px</option><option value="4">4px</option><option value="8">8px</option><option value="12">12px</option><option value="16">16px</option><option value="20">20px</option><option value="24">24px</option><option value="28">28px</option><option value="32">32px</option><option value="40">40px</option>
-    </select>
-  </div>
-  <div class="setting-row">
-    <label>下边距</label>
-    <select id="marginBottom">
-      <option value="0">0px</option><option value="4">4px</option><option value="8">8px</option><option value="12">12px</option><option value="16">16px</option><option value="20">20px</option><option value="24">24px</option><option value="28">28px</option><option value="32">32px</option><option value="40">40px</option>
-    </select>
-  </div>
-  <div class="setting-row">
-    <label>左边距</label>
-    <select id="marginLeft">
-      <option value="4">4px</option><option value="8">8px</option><option value="12">12px</option><option value="16">16px</option><option value="20">20px</option><option value="24">24px</option><option value="28">28px</option><option value="32">32px</option><option value="40">40px</option>
-    </select>
-  </div>
-  <div class="setting-row">
-    <label>右边距</label>
-    <select id="marginRight">
-      <option value="4">4px</option><option value="8">8px</option><option value="12">12px</option><option value="16">16px</option><option value="20">20px</option><option value="24">24px</option><option value="28">28px</option><option value="32">32px</option><option value="40">40px</option>
-    </select>
-  </div>
-
-  <div class="setting-row">
-    <label>主题</label>
-    <select id="theme">
-      <option value="light">浅色</option>
-      <option value="sepia">护眼</option>
-      <option value="dark">深色</option>
-      <option value="custom">自定义</option>
-    </select>
+  <div class="section-label">边距 (px)</div>
+  <div class="margin-grid">
+    <div class="setting-row">
+      <label>上</label>
+      <select id="marginTop">
+        <option value="0">0</option><option value="4">4</option><option value="8">8</option><option value="12">12</option><option value="16">16</option><option value="20">20</option><option value="24">24</option><option value="28">28</option><option value="32">32</option><option value="40">40</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>下</label>
+      <select id="marginBottom">
+        <option value="0">0</option><option value="4">4</option><option value="8">8</option><option value="12">12</option><option value="16">16</option><option value="20">20</option><option value="24">24</option><option value="28">28</option><option value="32">32</option><option value="40">40</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>左</label>
+      <select id="marginLeft">
+        <option value="4">4</option><option value="8">8</option><option value="12">12</option><option value="16">16</option><option value="20">20</option><option value="24">24</option><option value="28">28</option><option value="32">32</option><option value="40">40</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>右</label>
+      <select id="marginRight">
+        <option value="4">4</option><option value="8">8</option><option value="12">12</option><option value="16">16</option><option value="20">20</option><option value="24">24</option><option value="28">28</option><option value="32">32</option><option value="40">40</option>
+      </select>
+    </div>
   </div>
 
-  <div class="setting-row" id="colorRow" style="display:none">
-    <label>背景色</label>
-    <input type="text" id="customColor" placeholder="#f5f0e8"
-      pattern="^#[0-9a-fA-F]{6}$"
-      style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
-  </div>
-
+  <div class="section-label">翻页</div>
   <div class="setting-row">
-    <label>点击跳屏翻页</label>
+    <label>翻页方向</label>
+    <select id="swapLR">
+      <option value="leftright">左右</option>
+      <option value="rightleft">右左</option>
+      <option value="updown">上下</option>
+    </select>
+  </div>
+  <div class="setting-row">
+    <label>跳屏翻页</label>
     <select id="pageScroll">
       <option value="0">关闭</option>
       <option value="1">开启</option>
     </select>
   </div>
-  <div class="setting-row">
-    <label>跳屏方向</label>
-    <select id="pageScrollDirection">
-      <option value="updown">上下</option>
-      <option value="leftright">左右</option>
-      <option value="rightleft">右左</option>
-    </select>
-  </div>
-  <p class="hint" style="margin-top:0;margin-bottom:10px;">点击对应区域跳至上/下一屏，无滚动动画</p>
+  <p class="hint">在页面底部显示上一页/下一页按钮，点击滚动一屏</p>
+
+  <div class="section-label">其他</div>
   <div class="setting-row">
     <label>自动进入阅读</label>
     <select id="autoEnterReader">
@@ -103,7 +108,7 @@
       <option value="1">开启</option>
     </select>
   </div>
-  <p class="hint" style="margin-top:0;margin-bottom:10px;">开启后，进入作品页自动打开阅读模式</p>
+  <p class="hint">开启后，进入作品页自动打开阅读模式</p>
 
   <button id="saveBtn" class="btn-primary">保存设置</button>
   <p class="hint">打开AO3作品页面，点击浮动按钮进入阅读模式</p>

@@ -12,7 +12,6 @@ chrome.runtime.onInstalled.addListener(() => {
           marginLeft: 20,
           marginRight: 20,
           pageScroll: false,
-          pageScrollDirection: 'updown',
           autoEnterReader: false
         }
       });

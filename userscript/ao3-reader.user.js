@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 Reader
 // @namespace    https://github.com/franose371/ao3-reader
-// @version      1.2.1
+// @version      1.3.0
 // @description  优化AO3网站在手机端的阅读体验，支持分页阅读、跳屏翻页、多主题切换
 // @author       franose371
 // @homepageURL  https://github.com/franose371/ao3-reader
@@ -39,6 +39,38 @@
       justify-content: center;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Page scroll bar (non-reading-mode pages) */
+    #ao3-reader-pagebar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      display: flex;
+      gap: 8px;
+      padding: 8px 16px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+      z-index: 9997;
+      background: rgba(255,255,255,0.95);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+      box-sizing: border-box;
+    }
+    #ao3-reader-pagebar button {
+      flex: 1;
+      padding: 10px 0;
+      border: 1px solid rgba(144,0,0,0.25);
+      border-radius: 6px;
+      background: #900000;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #ao3-reader-pagebar button:active {
+      opacity: 0.8;
     }
 
     /* Reading mode overlay */
@@ -307,11 +339,13 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
       margin: 10px 0;
       font-size: 14px;
     }
     #ao3-reader-menu .menu-row label {
-      flex: 1;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     #ao3-reader-menu .menu-row button {
       background: #f0f0f0;
@@ -339,10 +373,16 @@
       color: #900000;
     }
 
+    #ao3-reader-menu .menu-hint {
+      font-size: 11px;
+      color: #999;
+      margin: 4px 0 8px;
+    }
+
     #ao3-reader-menu .btn-primary {
       display: block;
       width: 100%;
-      margin-top: 14px;
+      margin-top: 18px;
       padding: 10px;
       background: #900000 !important;
       color: #fff !important;
@@ -360,12 +400,12 @@
     theme: 'light',
     lineHeight: 1.8,
     customColor: '',
+    customTextColor: '',
     marginTop: 12,
     marginBottom: 12,
     marginLeft: 20,
     marginRight: 20,
     pageScroll: false,
-    pageScrollDirection: 'updown',
     autoEnterReader: false,
   };
 
@@ -385,8 +425,6 @@
   let cachedContentEl = null;   // for repaginate after AJAX chapter load
   let chapterSummary = null;    // cloned DOM node for chapter summary
   let pageScrollEventsBound = false;
-  let psTouchStartX = 0;
-  let psTouchStartY = 0;
   const chapterCache = new Map();  // url -> chapter data, so popstate can render without refetch
 
   // DOM refs (populated when reader is created)
@@ -570,26 +608,12 @@
   function buildMenuHTML() {
     const customDisplay = settings.theme === 'custom' ? '' : 'display:none;';
     const colorVal = settings.customColor || getThemeDefaultColor();
+    const textColorVal = settings.customTextColor || '#1a1a1a';
     return `
       <div class="menu-backdrop"></div>
       <div class="menu-panel">
         <h3>阅读设置</h3>
-        <div class="menu-row">
-          <label>翻页方向</label>
-          <select id="ao3-menu-swap">
-            <option value="leftright" ${settings.swapLR === 'leftright' ? 'selected' : ''}>左右</option>
-            <option value="rightleft" ${settings.swapLR === 'rightleft' ? 'selected' : ''}>右左</option>
-            <option value="updown" ${settings.swapLR === 'updown' ? 'selected' : ''}>上下</option>
-          </select>
-        </div>
-        <div class="menu-row">
-          <label>字号</label>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <button id="ao3-menu-font-down">−</button>
-            <span id="ao3-menu-font-val">${settings.fontSize}</span>
-            <button id="ao3-menu-font-up">+</button>
-          </div>
-        </div>
+        <div class="menu-section-label">显示</div>
         <div class="menu-row">
           <label>主题</label>
           <select id="ao3-menu-theme">
@@ -601,9 +625,29 @@
         </div>
         <div class="menu-row" id="ao3-menu-color-row" style="${customDisplay}">
           <label>背景色</label>
-          <input type="text" id="ao3-menu-custom-color" value="${colorVal}"
-            placeholder="#f5f0e8" pattern="^#[0-9a-fA-F]{6}$"
-            style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="ao3-menu-color-swatch" style="width:20px;height:20px;border-radius:4px;border:1px solid #ccc;background:${colorVal};display:inline-block;flex-shrink:0;"></span>
+            <input type="text" id="ao3-menu-custom-color" value="${colorVal}"
+              placeholder="#f5f0e8" pattern="^#[0-9a-fA-F]{6}$"
+              style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
+          </div>
+        </div>
+        <div class="menu-row" id="ao3-menu-textcolor-row" style="${customDisplay}">
+          <label>文字色</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="ao3-menu-textcolor-swatch" style="width:20px;height:20px;border-radius:4px;border:1px solid #ccc;background:${textColorVal};display:inline-block;flex-shrink:0;"></span>
+            <input type="text" id="ao3-menu-custom-textcolor" value="${textColorVal}"
+              placeholder="#1a1a1a" pattern="^#[0-9a-fA-F]{6}$"
+              style="width:80px;padding:4px 6px;font-size:13px;border:1px solid #ccc;border-radius:4px;">
+          </div>
+        </div>
+        <div class="menu-row">
+          <label>字号</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button id="ao3-menu-font-down">−</button>
+            <span id="ao3-menu-font-val">${settings.fontSize}</span>
+            <button id="ao3-menu-font-up">+</button>
+          </div>
         </div>
         <div class="menu-row">
           <label>行高</label>
@@ -614,7 +658,7 @@
             <option value="2.2" ${settings.lineHeight === 2.2 ? 'selected' : ''}>2.2</option>
           </select>
         </div>
-        <div style="font-size:14px;font-weight:bold;margin:10px 0 4px;">边距设置 (px)</div>
+        <div class="menu-section-label">边距 (px)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
           <div class="menu-row" style="margin:4px 0;">
             <label>上</label>
@@ -641,7 +685,15 @@
             </select>
           </div>
         </div>
-        <div class="menu-section-label">跳屏翻页</div>
+        <div class="menu-section-label">翻页</div>
+        <div class="menu-row">
+          <label>翻页方向</label>
+          <select id="ao3-menu-swap">
+            <option value="leftright" ${settings.swapLR === 'leftright' ? 'selected' : ''}>左右</option>
+            <option value="rightleft" ${settings.swapLR === 'rightleft' ? 'selected' : ''}>右左</option>
+            <option value="updown" ${settings.swapLR === 'updown' ? 'selected' : ''}>上下</option>
+          </select>
+        </div>
         <div class="menu-row">
           <label>跳屏翻页</label>
           <select id="ao3-menu-pagescroll">
@@ -649,23 +701,16 @@
             <option value="1" ${settings.pageScroll ? 'selected' : ''}>开启</option>
           </select>
         </div>
-        <div class="menu-row" id="ao3-menu-pagescroll-dir-row" style="${settings.pageScroll ? '' : 'display:none;'}">
-          <label>跳屏方向</label>
-          <select id="ao3-menu-pagescroll-dir">
-            <option value="updown" ${settings.pageScrollDirection === 'updown' ? 'selected' : ''}>上下</option>
-            <option value="leftright" ${settings.pageScrollDirection === 'leftright' ? 'selected' : ''}>左右</option>
-            <option value="rightleft" ${settings.pageScrollDirection === 'rightleft' ? 'selected' : ''}>右左</option>
-          </select>
-        </div>
-        <p style="font-size:11px;color:#999;margin:0;">点按跳屏区域跳至上/下一屏，无滚动动画</p>
-        <div class="menu-row" style="margin-top:10px;">
+        <p class="menu-hint">在页面底部显示上一页/下一页按钮，点击滚动一屏</p>
+        <div class="menu-section-label">其他</div>
+        <div class="menu-row">
           <label>自动进入阅读</label>
           <select id="ao3-menu-autoenter">
             <option value="0" ${!settings.autoEnterReader ? 'selected' : ''}>关闭</option>
             <option value="1" ${settings.autoEnterReader ? 'selected' : ''}>开启</option>
           </select>
         </div>
-        <p style="font-size:11px;color:#999;margin:0;">开启后，进入作品页自动打开阅读模式</p>
+        <p class="menu-hint">开启后，进入作品页自动打开阅读模式</p>
         <button id="ao3-menu-exit" class="btn-primary">退出阅读模式</button>
       </div>
     `;
@@ -755,87 +800,9 @@
     window.scrollBy({ top: -window.innerHeight * 0.9, behavior: 'instant' });
   }
 
-  // Return 'up' | 'down' | null based on tap position and current direction setting
-  function getTapScrollDir(x, y) {
-    const dir = settings.pageScrollDirection;
-    if (dir === 'updown') {
-      return y < window.innerHeight / 2 ? 'up' : 'down';
-    }
-    if (dir === 'leftright') {
-      if (x < window.innerWidth / 3) return 'up';
-      if (x > window.innerWidth * 2 / 3) return 'down';
-      return null;
-    }
-    // rightleft
-    if (x > window.innerWidth * 2 / 3) return 'up';
-    if (x < window.innerWidth / 3) return 'down';
-    return null;
-  }
-
-  // Return 'up' | 'down' for a horizontal swipe
-  function getSwipeScrollDir(dx) {
-    if (settings.pageScrollDirection === 'rightleft') {
-      return dx > 0 ? 'up' : 'down';
-    }
-    // updown and leftright both: right→down, left→up
-    return dx > 0 ? 'down' : 'up';
-  }
-
   function doScrollAction(dir) {
     if (dir === 'up') scrollPageUp();
     else if (dir === 'down') scrollPageDown();
-  }
-
-  function onPageScrollClick(e) {
-    if (isActive) return;
-    if (isInteractiveTarget(e.target)) return;
-    const dir = getTapScrollDir(e.clientX, e.clientY);
-    if (dir) {
-      e.preventDefault();
-      doScrollAction(dir);
-    }
-  }
-
-  function onPageScrollTouchStart(e) {
-    if (isActive) return;
-    if (e.touches.length === 1) {
-      psTouchStartX = e.touches[0].clientX;
-      psTouchStartY = e.touches[0].clientY;
-    }
-  }
-
-  function onPageScrollTouchMove(e) {
-    if (isActive) return;
-    const dx = e.touches[0].clientX - psTouchStartX;
-    const dy = e.touches[0].clientY - psTouchStartY;
-    // Block native scroll for horizontal swipes so scrollBy jump is clean
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
-      e.preventDefault();
-    }
-  }
-
-  function onPageScrollTouchEnd(e) {
-    if (isActive) return;
-    if (isInteractiveTarget(e.target)) return;
-
-    const dx = e.changedTouches[0].clientX - psTouchStartX;
-    const dy = e.changedTouches[0].clientY - psTouchStartY;
-
-    // Horizontal swipe
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-      e.preventDefault();
-      doScrollAction(getSwipeScrollDir(dx));
-      return;
-    }
-
-    // Tap detection
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-      const dir = getTapScrollDir(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-      if (dir) {
-        e.preventDefault();
-        doScrollAction(dir);
-      }
-    }
   }
 
   function onPageScrollKeyDown(e) {
@@ -850,22 +817,46 @@
     }
   }
 
+  function createPageBar() {
+    if (document.getElementById('ao3-reader-pagebar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'ao3-reader-pagebar';
+    bar.innerHTML = `
+      <button id="ao3-reader-pagebar-prev">上一页</button>
+      <button id="ao3-reader-pagebar-next">下一页</button>
+    `;
+    document.body.appendChild(bar);
+    document.getElementById('ao3-reader-pagebar-prev').addEventListener('click', function (e) {
+      e.stopPropagation();
+      scrollPageUp();
+    });
+    document.getElementById('ao3-reader-pagebar-next').addEventListener('click', function (e) {
+      e.stopPropagation();
+      scrollPageDown();
+    });
+  }
+
+  function showPageBar() {
+    const bar = document.getElementById('ao3-reader-pagebar');
+    if (bar) bar.style.display = '';
+  }
+
+  function hidePageBar() {
+    const bar = document.getElementById('ao3-reader-pagebar');
+    if (bar) bar.style.display = 'none';
+  }
+
   function bindPageScrollEvents() {
     if (pageScrollEventsBound) return;
-    document.addEventListener('click', onPageScrollClick);
-    document.addEventListener('touchstart', onPageScrollTouchStart, { passive: true });
-    document.addEventListener('touchmove', onPageScrollTouchMove, { passive: false });
-    document.addEventListener('touchend', onPageScrollTouchEnd);
+    createPageBar();
+    showPageBar();
     document.addEventListener('keydown', onPageScrollKeyDown);
     pageScrollEventsBound = true;
   }
 
   function unbindPageScrollEvents() {
     if (!pageScrollEventsBound) return;
-    document.removeEventListener('click', onPageScrollClick);
-    document.removeEventListener('touchstart', onPageScrollTouchStart);
-    document.removeEventListener('touchmove', onPageScrollTouchMove);
-    document.removeEventListener('touchend', onPageScrollTouchEnd);
+    hidePageBar();
     document.removeEventListener('keydown', onPageScrollKeyDown);
     pageScrollEventsBound = false;
   }
@@ -1058,6 +1049,12 @@
       overlay.style.backgroundColor = '';
       overlay.style.removeProperty('--ao3-reader-card-bg');
     }
+
+    if (settings.customTextColor && /^#[0-9a-fA-F]{6}$/.test(settings.customTextColor)) {
+      overlay.style.color = settings.customTextColor;
+    } else {
+      overlay.style.color = '';
+    }
   }
 
   // ── Menu ────────────────────────────────────────────────────────────
@@ -1080,6 +1077,22 @@
       if (colorRow) {
         colorRow.style.display = settings.theme === 'custom' ? '' : 'none';
       }
+      const textColorInput = document.getElementById('ao3-menu-custom-textcolor');
+      const textColorRow = document.getElementById('ao3-menu-textcolor-row');
+      const textSwatch = document.getElementById('ao3-menu-textcolor-swatch');
+      if (textColorInput) {
+        textColorInput.value = settings.customTextColor || '#1a1a1a';
+      }
+      if (textColorRow) {
+        textColorRow.style.display = settings.theme === 'custom' ? '' : 'none';
+      }
+      if (textSwatch) {
+        textSwatch.style.background = settings.customTextColor || '#1a1a1a';
+      }
+      const bgSwatch = document.getElementById('ao3-menu-color-swatch');
+      if (bgSwatch) {
+        bgSwatch.style.background = settings.customColor || getThemeDefaultColor();
+      }
       const lhSel = document.getElementById('ao3-menu-lh');
       if (lhSel) lhSel.value = String(settings.lineHeight);
       const mtSel = document.getElementById('ao3-menu-mt');
@@ -1092,10 +1105,6 @@
       if (mrSel) mrSel.value = String(settings.marginRight || 20);
       const psSel = document.getElementById('ao3-menu-pagescroll');
       if (psSel) psSel.value = settings.pageScroll ? '1' : '0';
-      const psDirSel = document.getElementById('ao3-menu-pagescroll-dir');
-      if (psDirSel) psDirSel.value = settings.pageScrollDirection;
-      const psDirRow = document.getElementById('ao3-menu-pagescroll-dir-row');
-      if (psDirRow) psDirRow.style.display = settings.pageScroll ? '' : 'none';
       const aeSel = document.getElementById('ao3-menu-autoenter');
       if (aeSel) aeSel.value = settings.autoEnterReader ? '1' : '0';
       menu.classList.add('show');
@@ -1131,17 +1140,25 @@
     const themeSel = document.getElementById('ao3-menu-theme');
     const colorInput = document.getElementById('ao3-menu-custom-color');
     const colorRow = document.getElementById('ao3-menu-color-row');
+    const textColorInput = document.getElementById('ao3-menu-custom-textcolor');
+    const textColorRow = document.getElementById('ao3-menu-textcolor-row');
     if (themeSel) {
       themeSel.addEventListener('change', function () {
         settings.theme = this.value;
         if (this.value === 'custom') {
           if (colorRow) colorRow.style.display = '';
+          if (textColorRow) textColorRow.style.display = '';
           if (colorInput) {
             settings.customColor = colorInput.value;
           }
+          if (textColorInput) {
+            settings.customTextColor = textColorInput.value;
+          }
         } else {
           if (colorRow) colorRow.style.display = 'none';
+          if (textColorRow) textColorRow.style.display = 'none';
           settings.customColor = '';
+          settings.customTextColor = '';
         }
         applyTheme();
         saveSettings();
@@ -1152,8 +1169,26 @@
     if (colorInput) {
       colorInput.addEventListener('input', function () {
         const val = this.value.trim();
+        const swatch = document.getElementById('ao3-menu-color-swatch');
         if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+          if (swatch) swatch.style.background = val;
           settings.customColor = val;
+          settings.theme = 'custom';
+          if (themeSel) themeSel.value = 'custom';
+          applyTheme();
+          saveSettings();
+        }
+      });
+    }
+
+    // Custom text color input
+    if (textColorInput) {
+      textColorInput.addEventListener('input', function () {
+        const val = this.value.trim();
+        const swatch = document.getElementById('ao3-menu-textcolor-swatch');
+        if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+          if (swatch) swatch.style.background = val;
+          settings.customTextColor = val;
           settings.theme = 'custom';
           if (themeSel) themeSel.value = 'custom';
           applyTheme();
@@ -1212,11 +1247,9 @@
 
     // Page scroll toggle
     const psSel = document.getElementById('ao3-menu-pagescroll');
-    const psDirRow = document.getElementById('ao3-menu-pagescroll-dir-row');
     if (psSel) {
       psSel.addEventListener('change', function () {
         settings.pageScroll = this.value === '1';
-        if (psDirRow) psDirRow.style.display = this.value === '1' ? '' : 'none';
         saveSettings();
         if (!isActive) {
           if (settings.pageScroll) {
@@ -1225,15 +1258,6 @@
             unbindPageScrollEvents();
           }
         }
-      });
-    }
-
-    // Page scroll direction
-    const psDirSel = document.getElementById('ao3-menu-pagescroll-dir');
-    if (psDirSel) {
-      psDirSel.addEventListener('change', function () {
-        settings.pageScrollDirection = this.value;
-        saveSettings();
       });
     }
 
@@ -1359,6 +1383,13 @@
     loadingEl._errorTimer = setTimeout(() => hideChapterLoading(), 2500);
   }
 
+  function handleCloudflareChallenge(url) {
+    isLoadingChapter = false;
+    hideChapterLoading();
+    exitReadingMode();
+    window.location.href = url;
+  }
+
   async function loadChapter(url, opts = {}) {
     if (isLoadingChapter) return;
     const { updateHistory = true } = opts;
@@ -1388,7 +1419,7 @@
       const statusMatch = err.message.match(/HTTP (\d+)/);
       const status = statusMatch ? parseInt(statusMatch[1]) : 0;
       if (status === 403 || status === 503) {
-        showChapterError('AO3 正在验证浏览器身份，请等待片刻后重试');
+        handleCloudflareChallenge(url);
       } else {
         showChapterError('章节加载失败，请检查网络后重试');
       }
@@ -1398,7 +1429,7 @@
     // Detect Cloudflare challenge in response HTML
     if (html.includes('cf-browser-verify') || html.includes('Just a moment') || html.includes('_cf_chl_opt')) {
       isLoadingChapter = false;
-      showChapterError('AO3 正在验证浏览器身份，请等待片刻后重试');
+      handleCloudflareChallenge(url);
       return;
     }
 
