@@ -20,6 +20,10 @@
 }
 
 /* Page scroll bar (non-reading-mode pages) */
+#ao3-reader-pagebar-spacer {
+  clear: both;
+  height: 0;
+}
 #ao3-reader-pagebar {
   position: fixed;
   bottom: 0;

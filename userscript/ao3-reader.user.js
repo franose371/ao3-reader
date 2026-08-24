@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AO3 Reader
 // @namespace    https://github.com/franose371/ao3-reader
-// @version      1.3.0
+// @version      1.3.1
 // @description  优化AO3网站在手机端的阅读体验，支持分页阅读、跳屏翻页、多主题切换
 // @author       franose371
 // @homepageURL  https://github.com/franose371/ao3-reader
@@ -42,6 +42,10 @@
     }
 
     /* Page scroll bar (non-reading-mode pages) */
+    #ao3-reader-pagebar-spacer {
+      clear: both;
+      height: 0;
+    }
     #ao3-reader-pagebar {
       position: fixed;
       bottom: 0;
@@ -819,6 +823,9 @@
 
   function createPageBar() {
     if (document.getElementById('ao3-reader-pagebar')) return;
+    const spacer = document.createElement('div');
+    spacer.id = 'ao3-reader-pagebar-spacer';
+    document.body.appendChild(spacer);
     const bar = document.createElement('div');
     bar.id = 'ao3-reader-pagebar';
     bar.innerHTML = `
@@ -838,12 +845,20 @@
 
   function showPageBar() {
     const bar = document.getElementById('ao3-reader-pagebar');
-    if (bar) bar.style.display = '';
+    if (bar) {
+      bar.style.display = '';
+      const spacer = document.getElementById('ao3-reader-pagebar-spacer');
+      if (spacer) spacer.style.height = bar.offsetHeight + 'px';
+    }
   }
 
   function hidePageBar() {
     const bar = document.getElementById('ao3-reader-pagebar');
-    if (bar) bar.style.display = 'none';
+    if (bar) {
+      bar.style.display = 'none';
+      const spacer = document.getElementById('ao3-reader-pagebar-spacer');
+      if (spacer) spacer.style.height = '0';
+    }
   }
 
   function bindPageScrollEvents() {
